@@ -23,38 +23,46 @@ app.get("/token", async (req, res) => {
       });
     }
 
-    if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+    if (
+      !LIVEKIT_URL ||
+      !LIVEKIT_API_KEY ||
+      !LIVEKIT_API_SECRET
+    ) {
+      console.error("LiveKit environment variables are missing");
+
       return res.status(500).json({
         error: "LiveKit server configuration is missing"
       });
     }
 
-    const token = new AccessToken(
+    const accessToken = new AccessToken(
       LIVEKIT_API_KEY,
       LIVEKIT_API_SECRET,
       {
-        identity,
+        identity: identity,
         ttl: "1h"
       }
     );
 
-    token.addGrant({
+    accessToken.addGrant({
       roomJoin: true,
-      room,
+      room: room,
       canPublish: true,
-      canSubscribe: true
+      canSubscribe: true,
+      canPublishData: true
     });
 
-    const jwt = await token.toJwt();
+    const jwt = await accessToken.toJwt();
 
-    return res.json({
+    return res.status(200).json({
       token: jwt,
       url: LIVEKIT_URL,
-      room,
-      identity
+      room: room,
+      identity: identity
     });
   } catch (error) {
-    console.error("Token generation failed:", error);
+    console.error("Token generation failed:", error.message);
+
     return res.status(500).json({
       error: "Could not generate token"
     });
