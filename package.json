@@ -1,0 +1,13 @@
+{
+  "name": "kk-live-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "livekit-server-sdk": "^2.13.3",
+    "express": "^4.21.2"
+  }
+}
