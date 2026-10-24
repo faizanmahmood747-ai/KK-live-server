@@ -1,40 +1,34 @@
-```javascript
 import express from "express";
 import { AccessToken } from "livekit-server-sdk";
 import admin from "firebase-admin";
 
 const app = express();
-
 app.use(express.json({ limit: "100kb" }));
 
-// ========================================
+// ================================
 // LIVEKIT CONFIGURATION
-// ========================================
+// ================================
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 
-// ========================================
+// ================================
 // FIREBASE ADMIN CONFIGURATION
-// ========================================
+// ================================
 
+let firebaseReady = false;
 let db = null;
 let firebaseAuth = null;
-let firebaseReady = false;
 
 try {
   const serviceAccountJson =
     process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-  if (!serviceAccountJson) {
-    console.error(
-      "FIREBASE_SERVICE_ACCOUNT_JSON is missing"
-    );
-  } else {
+  if (serviceAccountJson) {
     const serviceAccount = JSON.parse(serviceAccountJson);
 
-    if (admin.apps.length === 0) {
+    if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
       });
@@ -45,17 +39,18 @@ try {
     firebaseReady = true;
 
     console.log("Firebase Admin initialized");
+  } else {
+    console.error("Firebase service account is not configured");
   }
 } catch (error) {
-  console.error(
-    "Firebase initialization failed:",
-    error.message
-  );
+  console.error("Firebase initialization failed:", error.message);
 }
 
-// ========================================
+// ================================
 // GIFT CATALOGUE
-// ========================================
+// Prices are controlled by the server.
+// Never trust prices sent by the app.
+// ================================
 
 const GIFTS = {
   Rose: {
@@ -80,11 +75,9 @@ const GIFTS = {
   }
 };
 
-const STARTING_COINS = 300;
-
-// ========================================
-// VERIFY FIREBASE LOGIN
-// ========================================
+// ================================
+// HELPER: VERIFY FIREBASE LOGIN
+// ================================
 
 async function verifyFirebaseUser(req, res) {
   if (!firebaseReady || !firebaseAuth || !db) {
@@ -116,13 +109,10 @@ async function verifyFirebaseUser(req, res) {
   }
 
   try {
-    return await firebaseAuth.verifyIdToken(idToken);
-  } catch (error) {
-    console.error(
-      "Firebase token verification failed:",
-      error.message
-    );
+    const decodedToken = await firebaseAuth.verifyIdToken(idToken);
 
+    return decodedToken;
+  } catch (error) {
     res.status(401).json({
       error: "Invalid or expired Firebase login token"
     });
@@ -131,43 +121,31 @@ async function verifyFirebaseUser(req, res) {
   }
 }
 
-// ========================================
+// ================================
 // HOME ROUTE
-// ========================================
+// ================================
 
 app.get("/", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "K.K Live server is running",
-    features: ["LiveKit", "Wallet", "Gifts"]
-  });
+  res.status(200).send("KK Live token and wallet server is running");
 });
 
-// ========================================
-// LIVEKIT TOKEN
-// ========================================
+// ================================
+// LIVEKIT TOKEN ROUTE
+// Existing route preserved
+// ================================
 
 app.get("/token", async (req, res) => {
   try {
     const room = String(req.query.room || "").trim();
     const identity = String(req.query.identity || "").trim();
 
-    if (
-      !room ||
-      !identity ||
-      room.length > 200 ||
-      identity.length > 128
-    ) {
+    if (!room || !identity) {
       return res.status(400).json({
-        error: "Valid room and identity are required"
+        error: "room and identity are required"
       });
     }
 
-    if (
-      !LIVEKIT_URL ||
-      !LIVEKIT_API_KEY ||
-      !LIVEKIT_API_SECRET
-    ) {
+    if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
       console.error("LiveKit environment variables are missing");
 
       return res.status(500).json({
@@ -201,51 +179,54 @@ app.get("/token", async (req, res) => {
       identity
     });
   } catch (error) {
-    console.error("Token generation failed:", error);
+    console.error("Token generation failed:", error.message);
 
     return res.status(500).json({
-      error: "Could not generate LiveKit token"
+      error: "Could not generate token"
     });
   }
 });
 
-// ========================================
+// ================================
 // GET WALLET
-// New users receive 300 coins.
-// Existing balances are preserved.
-// ========================================
+// Creates a wallet with 100 coins
+// only if that user's wallet doesn't exist.
+// ================================
 
 app.get("/wallet", async (req, res) => {
   try {
     const user = await verifyFirebaseUser(req, res);
 
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
-    const walletRef = db
-      .collection("wallets")
-      .doc(user.uid);
+    const walletRef = db.collection("wallets").doc(user.uid);
 
-    const balance = await db.runTransaction(async (tx) => {
-      const snapshot = await tx.get(walletRef);
+    const balance = await db.runTransaction(async (transaction) => {
+      const walletSnapshot = await transaction.get(walletRef);
 
-      if (snapshot.exists) {
-        const coins = snapshot.data().coins;
+      if (walletSnapshot.exists) {
+        const currentCoins = walletSnapshot.data().coins;
 
-        if (!Number.isSafeInteger(coins) || coins < 0) {
+        if (
+          !Number.isSafeInteger(currentCoins) ||
+          currentCoins < 0
+        ) {
           throw new Error("WALLET_DATA_INVALID");
         }
 
-        return coins;
+        return currentCoins;
       }
 
-      tx.create(walletRef, {
+      transaction.create(walletRef, {
         uid: user.uid,
-        coins: STARTING_COINS,
+        coins: 100,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      return STARTING_COINS;
+      return 100;
     });
 
     return res.status(200).json({
@@ -253,13 +234,7 @@ app.get("/wallet", async (req, res) => {
       coins: balance
     });
   } catch (error) {
-    console.error("Wallet request failed:", error);
-
-    if (error.message === "WALLET_DATA_INVALID") {
-      return res.status(500).json({
-        error: "Wallet data needs administrator review"
-      });
-    }
+    console.error("Wallet request failed:", error.message);
 
     return res.status(500).json({
       error: "Could not load wallet"
@@ -267,23 +242,22 @@ app.get("/wallet", async (req, res) => {
   }
 });
 
-// ========================================
+// ================================
 // SEND GIFT
-// ========================================
+// Firebase login + live session +
+// wallet balance checked on server.
+// ================================
 
 app.post("/gift", async (req, res) => {
   try {
     const user = await verifyFirebaseUser(req, res);
 
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
-    const sessionId = String(
-      req.body?.sessionId || ""
-    ).trim();
-
-    const giftName = String(
-      req.body?.giftName || ""
-    ).trim();
+    const sessionId = String(req.body.sessionId || "").trim();
+    const giftName = String(req.body.giftName || "").trim();
 
     if (
       !sessionId ||
@@ -303,46 +277,30 @@ app.post("/gift", async (req, res) => {
       });
     }
 
-    const sessionRef = db
-      .collection("live_sessions")
-      .doc(sessionId);
+    const sessionRef = db.collection("live_sessions").doc(sessionId);
+    const walletRef = db.collection("wallets").doc(user.uid);
+    const senderRef = db.collection("users").doc(user.uid);
+    const giftRef = sessionRef.collection("gifts").doc();
 
-    const walletRef = db
-      .collection("wallets")
-      .doc(user.uid);
-
-    const senderRef = db
-      .collection("users")
-      .doc(user.uid);
-
-    const giftRef = sessionRef
-      .collection("gifts")
-      .doc();
-
-    const result = await db.runTransaction(async (tx) => {
-      const sessionSnapshot = await tx.get(sessionRef);
-      const walletSnapshot = await tx.get(walletRef);
-      const senderSnapshot = await tx.get(senderRef);
+    const result = await db.runTransaction(async (transaction) => {
+      const sessionSnapshot = await transaction.get(sessionRef);
+      const walletSnapshot = await transaction.get(walletRef);
+      const senderSnapshot = await transaction.get(senderRef);
 
       if (!sessionSnapshot.exists) {
         throw new Error("LIVE_SESSION_NOT_FOUND");
       }
 
-      const session = sessionSnapshot.data();
-
-      if (session.status !== "live") {
+      if (sessionSnapshot.data().status !== "live") {
         throw new Error("LIVE_SESSION_NOT_ACTIVE");
-      }
-
-      if (session.hostUid === user.uid) {
-        throw new Error("CANNOT_GIFT_SELF");
       }
 
       if (!walletSnapshot.exists) {
         throw new Error("WALLET_NOT_INITIALIZED");
       }
 
-      const currentCoins = walletSnapshot.data().coins;
+      const walletData = walletSnapshot.data();
+      const currentCoins = walletData.coins;
 
       if (
         !Number.isSafeInteger(currentCoins) ||
@@ -363,18 +321,17 @@ app.post("/gift", async (req, res) => {
         senderData.name ||
         senderData.displayName ||
         user.name ||
-        user.email ||
         "Viewer"
       ).trim().slice(0, 80);
 
       const remainingCoins = currentCoins - gift.price;
 
-      tx.update(walletRef, {
+      transaction.update(walletRef, {
         coins: remainingCoins,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      tx.create(giftRef, {
+      transaction.create(giftRef, {
         senderUid: user.uid,
         senderName,
         giftName: gift.name,
@@ -398,40 +355,35 @@ app.post("/gift", async (req, res) => {
       ...result
     });
   } catch (error) {
-    console.error("Gift request failed:", error);
+    console.error("Gift request failed:", error.message);
 
-    const errors = {
-      LIVE_SESSION_NOT_FOUND: [
-        404,
-        "Live session not found"
-      ],
-      LIVE_SESSION_NOT_ACTIVE: [
-        400,
-        "This live session is not active"
-      ],
-      CANNOT_GIFT_SELF: [
-        400,
-        "You cannot send a gift to your own live"
-      ],
-      WALLET_NOT_INITIALIZED: [
-        400,
-        "Load your wallet before sending gifts"
-      ],
-      WALLET_DATA_INVALID: [
-        500,
-        "Wallet data needs administrator review"
-      ],
-      INSUFFICIENT_COINS: [
-        400,
-        "Not enough coins"
-      ]
-    };
+    if (error.message === "LIVE_SESSION_NOT_FOUND") {
+      return res.status(404).json({
+        error: "Live session not found"
+      });
+    }
 
-    const knownError = errors[error.message];
+    if (error.message === "LIVE_SESSION_NOT_ACTIVE") {
+      return res.status(400).json({
+        error: "This live session is not active"
+      });
+    }
 
-    if (knownError) {
-      return res.status(knownError[0]).json({
-        error: knownError[1]
+    if (error.message === "WALLET_NOT_INITIALIZED") {
+      return res.status(400).json({
+        error: "Load your wallet before sending gifts"
+      });
+    }
+
+    if (error.message === "WALLET_DATA_INVALID") {
+      return res.status(500).json({
+        error: "Wallet data needs administrator review"
+      });
+    }
+
+    if (error.message === "INSUFFICIENT_COINS") {
+      return res.status(400).json({
+        error: "Not enough coins"
       });
     }
 
@@ -441,35 +393,12 @@ app.post("/gift", async (req, res) => {
   }
 });
 
-// ========================================
-// ERROR HANDLER
-// ========================================
+// ================================
+// START SERVER
+// ================================
 
-app.use((error, req, res, next) => {
-  console.error("Express error:", error);
+const PORT = process.env.PORT || 10000;
 
-  if (res.headersSent) {
-    return next(error);
-  }
-
-  return res.status(500).json({
-    error: "Internal server error"
-  });
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`KK Live server listening on port ${PORT}`);
 });
-
-// ========================================
-// EXPORT FOR VERCEL
-// ========================================
-
-export default app;
-
-// Local development only.
-// Vercel imports the exported Express app.
-if (!process.env.VERCEL && process.env.NODE_ENV !== "production") {
-  const PORT = process.env.PORT || 10000;
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`K.K Live server listening on port ${PORT}`);
-  });
-}
-```
