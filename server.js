@@ -7,28 +7,17 @@ const app = express();
 
 app.use(express.json({ limit: "100kb" }));
 
-// --------------------------------------------------
-// ENVIRONMENT CONFIGURATION
-// --------------------------------------------------
-
+// LiveKit configuration
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 
-// --------------------------------------------------
-// FIREBASE ADMIN INITIALIZATION
-// --------------------------------------------------
-
+// Firebase Admin configuration
 let firebaseReady = false;
+let db = null;
 
 try {
   if (!admin.apps.length) {
-    // Recommended: configure Firebase Admin using
-    // Application Default Credentials on the server.
-    //
-    // For Vercel, set FIREBASE_SERVICE_ACCOUNT_JSON
-    // to the complete service-account JSON string.
-
     const serviceAccountJson =
       process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
@@ -45,7 +34,9 @@ try {
     }
   }
 
+  db = admin.firestore();
   firebaseReady = true;
+
   console.log("Firebase Admin initialized.");
 } catch (error) {
   console.error(
@@ -54,43 +45,15 @@ try {
   );
 }
 
-const db = firebaseReady ? admin.firestore() : null;
-
-// --------------------------------------------------
-// CONSTANT GIFT PRICES
-// The server, not the Android app, controls prices.
-// --------------------------------------------------
-
+// Gift prices controlled by the server
 const GIFTS = {
-  Rose: {
-    price: 50,
-    emoji: "🌹"
-  },
-  Heart: {
-    price: 200,
-    emoji: "❤️"
-  },
-  Diamond: {
-    price: 500,
-    emoji: "💎"
-  },
-  Crown: {
-    price: 1000,
-    emoji: "👑"
-  },
-  Rocket: {
-    price: 5000,
-    emoji: "🚀"
-  },
-  Lion: {
-    price: 10000,
-    emoji: "🦁"
-  }
+  Rose: { price: 50, emoji: "🌹" },
+  Heart: { price: 200, emoji: "❤️" },
+  Diamond: { price: 500, emoji: "💎" },
+  Crown: { price: 1000, emoji: "👑" },
+  Rocket: { price: 5000, emoji: "🚀" },
+  Lion: { price: 10000, emoji: "🦁" }
 };
-
-// --------------------------------------------------
-// HELPERS
-// --------------------------------------------------
 
 function requireFirebase() {
   if (!firebaseReady || !db) {
@@ -102,6 +65,7 @@ function requireFirebase() {
   }
 }
 
+// Verify Firebase ID token
 async function authenticateUser(req, res, next) {
   try {
     requireFirebase();
@@ -111,7 +75,7 @@ async function authenticateUser(req, res, next) {
     if (!authorization.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        error: "Login verification token is required."
+        error: "Firebase login token is required."
       });
     }
 
@@ -120,11 +84,12 @@ async function authenticateUser(req, res, next) {
     if (!idToken) {
       return res.status(401).json({
         success: false,
-        error: "Login verification token is empty."
+        error: "Firebase login token is empty."
       });
     }
 
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decodedToken =
+      await admin.auth().verifyIdToken(idToken);
 
     req.user = {
       uid: decodedToken.uid
@@ -144,17 +109,7 @@ async function authenticateUser(req, res, next) {
   }
 }
 
-function validSessionId(sessionId) {
-  return (
-    typeof sessionId === "string" &&
-    /^[A-Za-z0-9_-]{1,128}$/.test(sessionId)
-  );
-}
-
-// --------------------------------------------------
-// HEALTH CHECK
-// --------------------------------------------------
-
+// Basic health check
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -163,10 +118,7 @@ app.get("/", (req, res) => {
   });
 });
 
-// --------------------------------------------------
-// LIVEKIT TOKEN
-// --------------------------------------------------
-
+// Generate LiveKit token
 app.get("/token", async (req, res) => {
   try {
     const room = String(req.query.room || "").trim();
@@ -210,10 +162,8 @@ app.get("/token", async (req, res) => {
       canSubscribe: true
     });
 
-    const jwt = await token.toJwt();
-
     return res.json({
-      token: jwt,
+      token: await token.toJwt(),
       url: LIVEKIT_URL,
       room,
       identity
@@ -222,61 +172,49 @@ app.get("/token", async (req, res) => {
     console.error("Token generation failed:", error);
 
     return res.status(500).json({
-      error: "Could not generate token."
+      error: "Could not generate LiveKit token."
     });
   }
 });
 
-// --------------------------------------------------
-// GET WALLET
-// GET /wallet
-// Requires: Authorization: Bearer <Firebase ID token>
-// --------------------------------------------------
-
+// Load wallet
 app.get("/wallet", authenticateUser, async (req, res) => {
   try {
-    const uid = req.user.uid;
+    const userRef = db.collection("users").doc(req.user.uid);
 
-    const userRef = db.collection("users").doc(uid);
+    const coins = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(userRef);
 
-    const result = await db.runTransaction(async (transaction) => {
-      const userSnapshot = await transaction.get(userRef);
-
-      if (!userSnapshot.exists) {
+      if (!snapshot.exists) {
         const error = new Error("User profile not found.");
         error.status = 404;
         throw error;
       }
 
-      const userData = userSnapshot.data();
+      const userData = snapshot.data();
+      let balance = userData.coins;
 
-      let coins = userData.coins;
-
-      if (coins === undefined || coins === null) {
-        // New wallets start at zero. No free coins are added.
-        coins = 0;
-
-        transaction.update(userRef, {
-          coins: 0
-        });
+      if (balance === undefined || balance === null) {
+        balance = 0;
+        transaction.update(userRef, { coins: 0 });
       }
 
       if (
-        typeof coins !== "number" ||
-        !Number.isSafeInteger(coins) ||
-        coins < 0
+        typeof balance !== "number" ||
+        !Number.isSafeInteger(balance) ||
+        balance < 0
       ) {
-        const error = new Error("Wallet balance is invalid.");
+        const error = new Error("Invalid wallet balance.");
         error.status = 500;
         throw error;
       }
 
-      return coins;
+      return balance;
     });
 
     return res.json({
       success: true,
-      coins: result
+      coins
     });
   } catch (error) {
     console.error("Wallet loading failed:", error);
@@ -288,24 +226,17 @@ app.get("/wallet", authenticateUser, async (req, res) => {
   }
 });
 
-// --------------------------------------------------
-// SEND GIFT
-// POST /gift
-// Body: { "sessionId": "...", "giftName": "Rose" }
-// Requires: Authorization: Bearer <Firebase ID token>
-// --------------------------------------------------
-
+// Send gift
 app.post("/gift", authenticateUser, async (req, res) => {
   try {
     const senderUid = req.user.uid;
-
     const sessionId = String(req.body.sessionId || "").trim();
     const giftName = String(req.body.giftName || "").trim();
 
-    if (!validSessionId(sessionId)) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
       return res.status(400).json({
         success: false,
-        error: "A valid live session ID is required."
+        error: "Invalid live session ID."
       });
     }
 
@@ -314,137 +245,129 @@ app.post("/gift", authenticateUser, async (req, res) => {
     if (!gift) {
       return res.status(400).json({
         success: false,
-        error: "This gift is not supported."
+        error: "Unsupported gift."
       });
     }
 
     const userRef = db.collection("users").doc(senderUid);
-
     const sessionRef = db
       .collection("live_sessions")
       .doc(sessionId);
 
     const giftRef = sessionRef.collection("gifts").doc();
 
-    const transactionResult = await db.runTransaction(
-      async (transaction) => {
-        const userSnapshot = await transaction.get(userRef);
-        const sessionSnapshot = await transaction.get(sessionRef);
+    const result = await db.runTransaction(async (transaction) => {
+      const userSnapshot = await transaction.get(userRef);
+      const sessionSnapshot = await transaction.get(sessionRef);
 
-        if (!userSnapshot.exists) {
-          const error = new Error("User profile not found.");
-          error.status = 404;
-          throw error;
-        }
-
-        if (!sessionSnapshot.exists) {
-          const error = new Error("Live session not found.");
-          error.status = 404;
-          throw error;
-        }
-
-        const userData = userSnapshot.data();
-        const sessionData = sessionSnapshot.data();
-
-        const coins = userData.coins;
-
-        if (
-          typeof coins !== "number" ||
-          !Number.isSafeInteger(coins) ||
-          coins < 0
-        ) {
-          const error = new Error("Wallet balance is invalid.");
-          error.status = 500;
-          throw error;
-        }
-
-        if (coins < gift.price) {
-          const error = new Error("Not enough coins.");
-          error.status = 400;
-          throw error;
-        }
-
-        const hostUid = String(
-          sessionData.hostUid || sessionData.userId || ""
-        ).trim();
-
-        if (!hostUid) {
-          const error = new Error(
-            "Live session does not have a valid host."
-          );
-          error.status = 400;
-          throw error;
-        }
-
-        if (hostUid === senderUid) {
-          const error = new Error(
-            "You cannot send a gift to your own live session."
-          );
-          error.status = 400;
-          throw error;
-        }
-
-        const hostRef = db.collection("users").doc(hostUid);
-        const hostSnapshot = await transaction.get(hostRef);
-
-        if (!hostSnapshot.exists) {
-          const error = new Error("Host profile not found.");
-          error.status = 404;
-          throw error;
-        }
-
-        const updatedCoins = coins - gift.price;
-
-        // Platform/host split: host receives 30% as diamonds.
-        // 10,000 diamonds = Rs 200.
-        const hostDiamonds = Math.floor(gift.price * 0.30);
-
-        const hostData = hostSnapshot.data();
-        const oldDiamonds = Number(hostData.diamonds || 0);
-
-        if (
-          !Number.isSafeInteger(oldDiamonds) ||
-          oldDiamonds < 0
-        ) {
-          const error = new Error("Host diamond balance is invalid.");
-          error.status = 500;
-          throw error;
-        }
-
-        transaction.update(userRef, {
-          coins: updatedCoins
-        });
-
-        transaction.update(hostRef, {
-          diamonds: oldDiamonds + hostDiamonds
-        });
-
-        transaction.set(giftRef, {
-          senderUid,
-          hostUid,
-          sessionId,
-          giftName,
-          emoji: gift.emoji,
-          price: gift.price,
-          hostDiamonds,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          coins: updatedCoins,
-          hostDiamonds,
-          giftName,
-          emoji: gift.emoji
-        };
+      if (!userSnapshot.exists) {
+        const error = new Error("User profile not found.");
+        error.status = 404;
+        throw error;
       }
-    );
+
+      if (!sessionSnapshot.exists) {
+        const error = new Error("Live session not found.");
+        error.status = 404;
+        throw error;
+      }
+
+      const userData = userSnapshot.data();
+      const sessionData = sessionSnapshot.data();
+      const balance = userData.coins;
+
+      if (
+        typeof balance !== "number" ||
+        !Number.isSafeInteger(balance) ||
+        balance < 0
+      ) {
+        const error = new Error("Invalid wallet balance.");
+        error.status = 500;
+        throw error;
+      }
+
+      if (balance < gift.price) {
+        const error = new Error("Not enough coins.");
+        error.status = 400;
+        throw error;
+      }
+
+      const hostUid = String(
+        sessionData.hostUid || sessionData.userId || ""
+      ).trim();
+
+      if (!hostUid) {
+        const error = new Error(
+          "Live session does not contain a host UID."
+        );
+        error.status = 400;
+        throw error;
+      }
+
+      if (hostUid === senderUid) {
+        const error = new Error(
+          "You cannot gift yourself."
+        );
+        error.status = 400;
+        throw error;
+      }
+
+      const hostRef = db.collection("users").doc(hostUid);
+      const hostSnapshot = await transaction.get(hostRef);
+
+      if (!hostSnapshot.exists) {
+        const error = new Error("Host profile not found.");
+        error.status = 404;
+        throw error;
+      }
+
+      const oldDiamonds = Number(
+        hostSnapshot.data().diamonds || 0
+      );
+
+      if (
+        !Number.isSafeInteger(oldDiamonds) ||
+        oldDiamonds < 0
+      ) {
+        const error = new Error("Invalid host diamond balance.");
+        error.status = 500;
+        throw error;
+      }
+
+      const newBalance = balance - gift.price;
+      const hostDiamonds = Math.floor(gift.price * 0.30);
+
+      transaction.update(userRef, {
+        coins: newBalance
+      });
+
+      transaction.update(hostRef, {
+        diamonds: oldDiamonds + hostDiamonds
+      });
+
+      transaction.set(giftRef, {
+        senderUid,
+        hostUid,
+        sessionId,
+        giftName,
+        emoji: gift.emoji,
+        price: gift.price,
+        hostDiamonds,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return {
+        coins: newBalance,
+        hostDiamonds
+      };
+    });
 
     return res.json({
       success: true,
-      coins: transactionResult.coins,
-      gift: transactionResult.giftName,
-      emoji: transactionResult.emoji,
-      hostDiamonds: transactionResult.hostDiamonds
+      coins: result.coins,
+      gift: giftName,
+      emoji: gift.emoji,
+      hostDiamonds: result.hostDiamonds
     });
   } catch (error) {
     console.error("Gift sending failed:", error);
@@ -456,24 +379,14 @@ app.post("/gift", authenticateUser, async (req, res) => {
   }
 });
 
-// --------------------------------------------------
-// 404 HANDLER
-// --------------------------------------------------
-
+// Unknown routes
 app.use((req, res) => {
-  return res.status(404).json({
+  res.status(404).json({
     success: false,
     error: `Route not found: ${req.method} ${req.path}`
   });
 });
 
-// --------------------------------------------------
-// START SERVER
-// --------------------------------------------------
-
-const PORT = process.env.PORT || 10000;
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`KK Live server listening on port ${PORT}`);
-});
+// Vercel serverless entry point
+export default app;
 ```
