@@ -4,7 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>K.K LIVE — Admin Panel</title>
+  <meta name="theme-color" content="#0b1020">
+  <title>K.K LIVE | Admin Panel</title>
 
   <style>
     * {
@@ -18,25 +19,26 @@
       color: #f4f6ff;
     }
 
+    header {
+      padding: 22px;
+      background: #11182b;
+      border-bottom: 1px solid #303b59;
+    }
+
     .container {
-      width: min(1200px, 94%);
+      width: 94%;
+      max-width: 1200px;
       margin: auto;
     }
 
-    header {
-      padding: 22px 0;
-      border-bottom: 1px solid #29314a;
-      background: #11182b;
-    }
-
-    .brand {
-      font-size: 26px;
+    .logo {
+      font-size: 27px;
       font-weight: bold;
       color: #a78bfa;
     }
 
-    .brand span {
-      color: #fff;
+    .logo span {
+      color: white;
     }
 
     .subtitle {
@@ -47,10 +49,10 @@
 
     .panel {
       background: #151d32;
-      border: 1px solid #293550;
-      border-radius: 16px;
-      padding: 22px;
-      margin: 25px 0;
+      border: 1px solid #303b59;
+      border-radius: 15px;
+      padding: 20px;
+      margin: 22px 0;
     }
 
     h2 {
@@ -60,10 +62,10 @@
 
     .login-box {
       max-width: 430px;
-      margin: 65px auto;
+      margin: 60px auto;
     }
 
-    input, select, button {
+    input, button {
       width: 100%;
       padding: 13px;
       margin: 7px 0;
@@ -77,8 +79,8 @@
     button {
       border: none;
       background: #7c3aed;
-      font-weight: bold;
       cursor: pointer;
+      font-weight: bold;
     }
 
     button:hover {
@@ -94,28 +96,37 @@
     }
 
     .message {
-      margin-top: 12px;
+      font-size: 13px;
       color: #fca5a5;
       overflow-wrap: anywhere;
-      font-size: 13px;
+      margin-top: 12px;
     }
 
     .success {
       color: #86efac;
     }
 
+    .muted {
+      color: #aab4d0;
+      font-size: 13px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
     .stats {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 15px;
-      margin: 25px 0;
+      gap: 14px;
+      margin: 22px 0;
     }
 
     .stat {
       background: linear-gradient(135deg, #1b2540, #202c4b);
       border: 1px solid #34415f;
-      padding: 20px;
-      border-radius: 15px;
+      border-radius: 14px;
+      padding: 19px;
     }
 
     .stat-label {
@@ -124,10 +135,10 @@
     }
 
     .stat-number {
-      font-size: 28px;
+      font-size: 27px;
       font-weight: bold;
-      margin-top: 12px;
       color: #c4b5fd;
+      margin-top: 12px;
       overflow-wrap: anywhere;
     }
 
@@ -157,89 +168,75 @@
     }
 
     .table-wrap {
+      width: 100%;
       overflow-x: auto;
     }
 
     table {
       width: 100%;
+      min-width: 600px;
       border-collapse: collapse;
-      min-width: 650px;
     }
 
     th, td {
       padding: 13px;
+      border-bottom: 1px solid #303b59;
       text-align: left;
-      border-bottom: 1px solid #293550;
       font-size: 13px;
       overflow-wrap: anywhere;
     }
 
     th {
-      color: #c4b5fd;
       background: #11182b;
+      color: #c4b5fd;
     }
 
-    .inline-form {
+    .coin-form {
       display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
+      grid-template-columns: 2fr 1fr;
+      gap: 10px;
     }
 
-    .inline-form input {
-      min-width: 0;
-    }
-
-    .inline-form button {
-      min-width: 110px;
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    .muted {
-      color: #aab4d0;
-      font-size: 13px;
+    .coin-form button {
+      grid-column: 1 / -1;
     }
 
     footer {
       text-align: center;
-      padding: 25px 0;
+      padding: 25px;
       color: #7f8baa;
       font-size: 12px;
     }
 
-    @media (max-width: 800px) {
+    @media (max-width: 750px) {
       .stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
-
-      .inline-form {
-        grid-template-columns: 1fr;
-      }
-
-      .inline-form button {
-        width: 100%;
-      }
     }
 
-    @media (max-width: 420px) {
+    @media (max-width: 450px) {
       .stats {
-        grid-template-columns: 1fr 1fr;
         gap: 8px;
       }
 
       .stat {
-        padding: 14px;
+        padding: 12px;
       }
 
       .stat-number {
-        font-size: 22px;
+        font-size: 21px;
       }
 
       .panel {
-        padding: 15px;
+        padding: 14px;
+      }
+
+      .coin-form {
+        grid-template-columns: 1fr;
+      }
+
+      .coin-form button {
+        grid-column: auto;
       }
     }
   </style>
@@ -248,8 +245,8 @@
 <body>
   <header>
     <div class="container">
-      <div class="brand">K.K <span>LIVE</span> <span style="font-size:14px;">ADMIN</span></div>
-      <div class="subtitle">Manage users, coins, gifts and live sessions</div>
+      <div class="logo">K.K <span>LIVE</span></div>
+      <div class="subtitle">ADMIN CONTROL PANEL</div>
     </div>
   </header>
 
@@ -257,11 +254,25 @@
 
     <section id="loginPanel" class="panel login-box">
       <h2>🔐 Admin Login</h2>
-      <p class="muted">Sign in with your Firebase admin account.</p>
+      <p class="muted">Login with your authorized Firebase account.</p>
 
       <form id="loginForm">
-        <input id="email" type="email" placeholder="Admin Email" required>
-        <input id="password" type="password" placeholder="Password" required>
+        <input
+          id="email"
+          type="email"
+          placeholder="Admin Email"
+          autocomplete="username"
+          required
+        >
+
+        <input
+          id="password"
+          type="password"
+          placeholder="Password"
+          autocomplete="current-password"
+          required
+        >
+
         <button type="submit">Login to Admin Panel</button>
       </form>
 
@@ -270,16 +281,20 @@
 
     <section id="dashboard" class="hidden">
 
-      <div class="panel">
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+      <section class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
           <div>
-            <h2 style="margin-bottom:6px;">Admin Dashboard</h2>
+            <h2 style="margin-bottom:6px;">📊 Dashboard</h2>
             <div id="adminEmail" class="muted"></div>
           </div>
-          <button id="logoutBtn" class="danger" style="width:auto;">Logout</button>
+
+          <button id="logoutBtn" class="danger" style="width:auto;">
+            Logout
+          </button>
         </div>
+
         <div id="globalMessage" class="message"></div>
-      </div>
+      </section>
 
       <div class="stats">
         <div class="stat">
@@ -311,54 +326,84 @@
       </div>
 
       <section id="usersSection" class="section active panel">
-        <h2>👥 Users List</h2>
-        <button id="refreshUsersBtn" style="width:auto;">Refresh Users</button>
+        <h2>👥 Users</h2>
+
+        <button id="refreshUsersBtn" style="width:auto;">
+          Refresh Users
+        </button>
+
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Name</th>
-                <th>UID</th>
+                <th>Firebase UID</th>
                 <th>Coins</th>
                 <th>Diamonds</th>
               </tr>
             </thead>
+
             <tbody id="usersTable">
-              <tr><td colspan="4">Login and load users.</td></tr>
+              <tr><td colspan="4">Login to load users.</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
       <section id="coinsSection" class="section panel">
-        <h2>🪙 Add Coins to User</h2>
-        <p class="muted">Enter the user's Firebase UID and the number of coins to add.</p>
+        <h2>🪙 Add Coins</h2>
 
-        <form id="coinsForm" class="inline-form">
-          <input id="targetUid" placeholder="User Firebase UID" required>
-          <input id="coinAmount" type="number" min="1" max="1000000" step="1"
-                 placeholder="Coins" required>
+        <p class="muted">
+          Enter the exact Firebase UID of the user and the number of coins.
+        </p>
+
+        <form id="coinsForm" class="coin-form">
+          <input
+            id="targetUid"
+            type="text"
+            placeholder="User Firebase UID"
+            required
+          >
+
+          <input
+            id="coinAmount"
+            type="number"
+            min="1"
+            max="1000000"
+            step="1"
+            placeholder="Coin Amount"
+            required
+          >
+
           <button type="submit">Add Coins</button>
         </form>
 
         <div id="coinsMessage" class="message"></div>
-        <p class="muted">Maximum per request: 1,000,000 coins. Check the UID carefully before adding coins.</p>
+
+        <p class="muted">
+          Maximum: 1,000,000 coins per request. Confirm the UID carefully.
+        </p>
       </section>
 
       <section id="liveSection" class="section panel">
         <h2>🔴 Live Sessions</h2>
-        <button id="refreshLiveBtn" style="width:auto;">Refresh Live Sessions</button>
+
+        <button id="refreshLiveBtn" style="width:auto;">
+          Refresh Live Sessions
+        </button>
+
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Host</th>
-                <th>Room</th>
+                <th>Room Name</th>
                 <th>Status</th>
               </tr>
             </thead>
+
             <tbody id="liveTable">
-              <tr><td colspan="3">Load live sessions.</td></tr>
+              <tr><td colspan="3">No data loaded.</td></tr>
             </tbody>
           </table>
         </div>
@@ -366,7 +411,11 @@
 
       <section id="giftsSection" class="section panel">
         <h2>🎁 Gift History</h2>
-        <button id="refreshGiftsBtn" style="width:auto;">Refresh Gifts</button>
+
+        <button id="refreshGiftsBtn" style="width:auto;">
+          Refresh Gifts
+        </button>
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -377,8 +426,9 @@
                 <th>Price</th>
               </tr>
             </thead>
+
             <tbody id="giftsTable">
-              <tr><td colspan="4">Load gift history.</td></tr>
+              <tr><td colspan="4">No data loaded.</td></tr>
             </tbody>
           </table>
         </div>
@@ -387,7 +437,7 @@
     </section>
   </main>
 
-  <footer>K.K LIVE Admin Panel · Secure administrator access required</footer>
+  <footer>K.K LIVE © Admin Panel</footer>
 
   <script type="module">
     import { initializeApp } from
@@ -398,25 +448,26 @@
       signInWithEmailAndPassword,
       onAuthStateChanged,
       signOut
-    } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    } from
+      "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
     /*
-      IMPORTANT:
-      Replace the placeholder values below with your Firebase Web App config.
-      Get it from Firebase Console > Project settings > Your apps > Web app.
-      Never put your Firebase service-account private key in this HTML file.
+      Firebase Web App configuration.
+      This is public web configuration, not a service-account private key.
     */
     const firebaseConfig = {
-      apiKey: "PASTE_YOUR_FIREBASE_API_KEY",
-      authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
-      projectId: "PASTE_YOUR_PROJECT_ID",
-      appId: "PASTE_YOUR_FIREBASE_APP_ID"
+      apiKey: "AIzaSyDC4AaIR_BRCn_ioVdXv5GZa1mnuymHPmg",
+      authDomain: "chingo-live.firebaseapp.com",
+      projectId: "chingo-live",
+      appId: "1:334013160718:web:ffe2f568b3f15b2bbd4b5f",
+      storageBucket: "chingo-live.firebasestorage.app",
+      messagingSenderId: "334013160718"
     };
-
-    const API_BASE = window.location.origin;
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+
+    const API_BASE = window.location.origin;
 
     const $ = (id) => document.getElementById(id);
 
@@ -427,28 +478,26 @@
     }
 
     function escapeHtml(value) {
-      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      return String(value ?? "").replace(/[&<>"']/g, (character) => ({
         "&": "&amp;",
         "<": "&lt;",
         ">": "&gt;",
         '"': "&quot;",
         "'": "&#39;"
-      }[char]));
+      }[character]));
     }
 
-    function numberFormat(value) {
+    function formatNumber(value) {
       const number = Number(value ?? 0);
       return Number.isFinite(number) ? number.toLocaleString() : "0";
     }
 
     async function api(path, options = {}) {
-      const user = auth.currentUser;
-
-      if (!user) {
-        throw new Error("Please login first.");
+      if (!auth.currentUser) {
+        throw new Error("Please log in first.");
       }
 
-      const token = await user.getIdToken();
+      const token = await auth.currentUser.getIdToken();
 
       const response = await fetch(API_BASE + path, {
         ...options,
@@ -459,17 +508,21 @@
         }
       });
 
-      const text = await response.text();
-      let data = {};
+      const responseText = await response.text();
+      let data;
 
       try {
-        data = text ? JSON.parse(text) : {};
+        data = responseText ? JSON.parse(responseText) : {};
       } catch {
-        throw new Error("Server returned an unexpected response. Check the Vercel deployment.");
+        throw new Error(
+          "Unexpected server response. Please check the Vercel deployment."
+        );
       }
 
       if (!response.ok) {
-        throw new Error(data.error || data.message || ("Request failed: " + response.status));
+        throw new Error(
+          data.error || data.message || "Request failed: " + response.status
+        );
       }
 
       return data;
@@ -497,23 +550,31 @@
 
         showMessage("loginMessage", "");
       } catch (error) {
-        showMessage("loginMessage", error.message || "Login failed.");
+        showMessage(
+          "loginMessage",
+          error.message || "Unable to log in."
+        );
       }
     });
 
     $("logoutBtn").addEventListener("click", async () => {
-      await signOut(auth);
-      showMessage("globalMessage", "");
+      try {
+        await signOut(auth);
+      } catch (error) {
+        showMessage("globalMessage", error.message);
+      }
     });
 
     onAuthStateChanged(auth, async (user) => {
       setLoggedIn(Boolean(user));
 
       if (user) {
-        await loadSummary();
-        await loadUsers();
-        await loadLiveSessions();
-        await loadGifts();
+        await Promise.all([
+          loadSummary(),
+          loadUsers(),
+          loadLiveSessions(),
+          loadGifts()
+        ]);
       }
     });
 
@@ -537,10 +598,18 @@
         const data = await api("/admin/summary");
         const summary = data.summary || data;
 
-        $("totalUsers").textContent = numberFormat(summary.totalUsers);
-        $("totalCoins").textContent = numberFormat(summary.totalCoins);
-        $("totalDiamonds").textContent = numberFormat(summary.totalDiamonds);
-        $("totalLive").textContent = numberFormat(summary.totalLiveSessions);
+        $("totalUsers").textContent =
+          formatNumber(summary.totalUsers);
+
+        $("totalCoins").textContent =
+          formatNumber(summary.totalCoins);
+
+        $("totalDiamonds").textContent =
+          formatNumber(summary.totalDiamonds);
+
+        $("totalLive").textContent =
+          formatNumber(summary.totalLiveSessions);
+
         showMessage("globalMessage", "");
       } catch (error) {
         showMessage("globalMessage", "Dashboard: " + error.message);
@@ -563,12 +632,13 @@
 
         $("usersTable").innerHTML = users.map((user) => {
           const uid = user.uid || user.id || "";
+
           return `
             <tr>
               <td>${escapeHtml(user.name || user.displayName || user.email || "User")}</td>
               <td>${escapeHtml(uid)}</td>
-              <td>${numberFormat(user.coins)}</td>
-              <td>${numberFormat(user.diamonds)}</td>
+              <td>${formatNumber(user.coins)}</td>
+              <td>${formatNumber(user.diamonds)}</td>
             </tr>
           `;
         }).join("");
@@ -590,18 +660,23 @@
       const amount = Number($("coinAmount").value);
 
       if (!uid) {
-        showMessage("coinsMessage", "Please enter the user's UID.");
+        showMessage("coinsMessage", "Enter the user's Firebase UID.");
         return;
       }
 
       if (!Number.isInteger(amount) || amount < 1 || amount > 1000000) {
-        showMessage("coinsMessage", "Coins must be a whole number from 1 to 1,000,000.");
+        showMessage(
+          "coinsMessage",
+          "Enter a whole number from 1 to 1,000,000."
+        );
         return;
       }
 
-      if (!confirm(`Add ${amount} coins to user ${uid}?`)) {
-        return;
-      }
+      const confirmed = confirm(
+        `Add ${amount} coins to user ${uid}?`
+      );
+
+      if (!confirmed) return;
 
       showMessage("coinsMessage", "Adding coins...");
 
@@ -633,7 +708,9 @@
 
       try {
         const data = await api("/admin/live-sessions");
-        const sessions = Array.isArray(data) ? data : (data.sessions || []);
+        const sessions = Array.isArray(data)
+          ? data
+          : (data.sessions || []);
 
         if (!sessions.length) {
           $("liveTable").innerHTML =
@@ -675,7 +752,7 @@
             <td>${escapeHtml(gift.giftName || gift.name || gift.gift || "Gift")}</td>
             <td>${escapeHtml(gift.senderName || gift.senderUid || gift.senderId || "—")}</td>
             <td>${escapeHtml(gift.receiverName || gift.hostUid || gift.receiverUid || "—")}</td>
-            <td>${numberFormat(gift.price ?? gift.coins ?? gift.amount)}</td>
+            <td>${formatNumber(gift.price ?? gift.coins ?? gift.amount)}</td>
           </tr>
         `).join("");
       } catch (error) {
