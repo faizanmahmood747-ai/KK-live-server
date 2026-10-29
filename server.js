@@ -1,3 +1,4 @@
+```javascript
 import express from "express";
 import { AccessToken } from "livekit-server-sdk";
 import admin from "firebase-admin";
@@ -9,6 +10,7 @@ app.use(express.json({ limit: "100kb" }));
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+const ADMIN_UID = process.env.ADMIN_UID;
 
 let firebaseReady = false;
 let db = null;
@@ -94,6 +96,76 @@ async function authenticateUser(req, res, next) {
   }
 }
 
+// Only the UID configured in Vercel can use admin APIs.
+function requireAdmin(req, res, next) {
+  if (!ADMIN_UID) {
+    return res.status(503).json({
+      success: false,
+      error: "ADMIN_UID is not configured in Vercel."
+    });
+  }
+
+  if (!req.user || req.user.uid !== ADMIN_UID) {
+    return res.status(403).json({
+      success: false,
+      error: "Admin access denied."
+    });
+  }
+
+  next();
+}
+
+function adminOnly(req, res, next) {
+  requireFirebase(req, res, (error) => {
+    if (error) return next(error);
+
+    authenticateUser(req, res, (authError) => {
+      if (authError) return next(authError);
+
+      requireAdmin(req, res, next);
+    });
+  });
+}
+
+function safeDate(value) {
+  if (!value) return null;
+
+  if (typeof value.toDate === "function") {
+    return value.toDate().toISOString();
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return value;
+}
+
+function safeUser(doc) {
+  const data = doc.data();
+
+  return {
+    uid: doc.id,
+    name: data.name || data.displayName || "Unknown",
+    email: data.email || "",
+    country: data.country || "",
+    coins: Number.isSafeInteger(data.coins) ? data.coins : 0,
+    diamonds: Number.isSafeInteger(data.diamonds)
+      ? data.diamonds
+      : 0,
+    createdAt: safeDate(data.createdAt)
+  };
+}
+
+function validUid(uid) {
+  return (
+    typeof uid === "string" &&
+    uid.length > 0 &&
+    uid.length <= 128 &&
+    !uid.includes("/")
+  );
+}
+
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -102,14 +174,23 @@ app.get("/", (req, res) => {
   });
 });
 
+// --------------------------------------------------
+// LIVEKIT TOKEN
+// --------------------------------------------------
+
 app.get("/token", async (req, res) => {
   try {
     const room = String(req.query.room || "").trim();
     const identity = String(req.query.identity || "").trim();
 
-    if (!room || !identity) {
+    if (
+      !room ||
+      !identity ||
+      room.length > 128 ||
+      identity.length > 128
+    ) {
       return res.status(400).json({
-        error: "room and identity are required."
+        error: "Valid room and identity are required."
       });
     }
 
@@ -153,6 +234,10 @@ app.get("/token", async (req, res) => {
     });
   }
 });
+
+// --------------------------------------------------
+// USER WALLET
+// --------------------------------------------------
 
 app.get(
   "/wallet",
@@ -200,6 +285,10 @@ app.get(
     }
   }
 );
+
+// --------------------------------------------------
+// SEND GIFT
+// --------------------------------------------------
 
 app.post(
   "/gift",
@@ -269,6 +358,12 @@ app.post(
           if (!hostUid || hostUid === senderUid) {
             throw new Error(
               "Invalid host or self-gifting is not allowed."
+            );
+          }
+
+          if (sessionData.status !== "live") {
+            throw new Error(
+              "This live session is not active."
             );
           }
 
@@ -357,6 +452,312 @@ app.post(
   }
 );
 
+// --------------------------------------------------
+// ADMIN: DASHBOARD SUMMARY
+// GET /admin/summary
+// --------------------------------------------------
+
+app.get(
+  "/admin/summary",
+  adminOnly,
+  async (req, res) => {
+    try {
+      const usersSnapshot = await db
+        .collection("users")
+        .get();
+
+      const sessionsSnapshot = await db
+        .collection("live_sessions")
+        .get();
+
+      let totalCoins = 0;
+      let totalDiamonds = 0;
+
+      usersSnapshot.forEach((doc) => {
+        const data = doc.data();
+
+        if (
+          typeof data.coins === "number" &&
+          Number.isSafeInteger(data.coins) &&
+          data.coins >= 0
+        ) {
+          totalCoins += data.coins;
+        }
+
+        if (
+          typeof data.diamonds === "number" &&
+          Number.isSafeInteger(data.diamonds) &&
+          data.diamonds >= 0
+        ) {
+          totalDiamonds += data.diamonds;
+        }
+      });
+
+      let activeSessions = 0;
+
+      sessionsSnapshot.forEach((doc) => {
+        if (doc.data().status === "live") {
+          activeSessions++;
+        }
+      });
+
+      return res.json({
+        success: true,
+        totalUsers: usersSnapshot.size,
+        totalCoins,
+        totalDiamonds,
+        totalLiveSessions: activeSessions
+      });
+    } catch (error) {
+      console.error("Admin summary failed:", error);
+
+      return res.status(500).json({
+        success: false,
+        error: "Could not load dashboard summary."
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// ADMIN: USERS LIST
+// GET /admin/users
+// --------------------------------------------------
+
+app.get(
+  "/admin/users",
+  adminOnly,
+  async (req, res) => {
+    try {
+      const snapshot = await db
+        .collection("users")
+        .limit(200)
+        .get();
+
+      const users = snapshot.docs.map(safeUser);
+
+      return res.json({
+        success: true,
+        count: users.length,
+        users
+      });
+    } catch (error) {
+      console.error("Admin users list failed:", error);
+
+      return res.status(500).json({
+        success: false,
+        error: "Could not load users."
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// ADMIN: ADD COINS TO A USER
+// POST /admin/users/:uid/coins
+// JSON body: { "amount": 1000 }
+// --------------------------------------------------
+
+app.post(
+  "/admin/users/:uid/coins",
+  adminOnly,
+  async (req, res) => {
+    try {
+      const uid = req.params.uid;
+      const amount = req.body.amount;
+
+      if (!validUid(uid)) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid user UID."
+        });
+      }
+
+      if (
+        typeof amount !== "number" ||
+        !Number.isSafeInteger(amount) ||
+        amount < 1 ||
+        amount > 1000000
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: "Amount must be an integer from 1 to 1000000."
+        });
+      }
+
+      const userRef = db
+        .collection("users")
+        .doc(uid);
+
+      const result = await db.runTransaction(
+        async (transaction) => {
+          const snapshot = await transaction.get(userRef);
+
+          if (!snapshot.exists) {
+            throw new Error("User profile not found.");
+          }
+
+          const oldCoins = snapshot.data().coins ?? 0;
+
+          if (
+            typeof oldCoins !== "number" ||
+            !Number.isSafeInteger(oldCoins) ||
+            oldCoins < 0 ||
+            oldCoins + amount > Number.MAX_SAFE_INTEGER
+          ) {
+            throw new Error("Invalid current coin balance.");
+          }
+
+          const newCoins = oldCoins + amount;
+
+          transaction.update(userRef, {
+            coins: newCoins
+          });
+
+          const logRef = db
+            .collection("admin_logs")
+            .doc();
+
+          transaction.set(logRef, {
+            action: "add_coins",
+            adminUid: req.user.uid,
+            targetUid: uid,
+            amount,
+            balanceAfter: newCoins,
+            createdAt:
+              admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          return newCoins;
+        }
+      );
+
+      return res.json({
+        success: true,
+        message: "Coins added successfully.",
+        uid,
+        addedCoins: amount,
+        newBalance: result
+      });
+    } catch (error) {
+      console.error("Admin add coins failed:", error);
+
+      const status =
+        error.message === "User profile not found."
+          ? 404
+          : 400;
+
+      return res.status(status).json({
+        success: false,
+        error: error.message || "Could not add coins."
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// ADMIN: LIVE SESSIONS
+// GET /admin/live-sessions
+// --------------------------------------------------
+
+app.get(
+  "/admin/live-sessions",
+  adminOnly,
+  async (req, res) => {
+    try {
+      const snapshot = await db
+        .collection("live_sessions")
+        .limit(200)
+        .get();
+
+      const sessions = snapshot.docs.map((doc) => {
+        const data = doc.data();
+
+        return {
+          sessionId: doc.id,
+          hostUid: data.hostUid || data.userId || "",
+          hostName: data.hostName || "Unknown",
+          roomName: data.roomName || "",
+          status: data.status || "unknown",
+          startedAt: safeDate(data.startedAt)
+        };
+      });
+
+      return res.json({
+        success: true,
+        count: sessions.length,
+        sessions
+      });
+    } catch (error) {
+      console.error("Admin sessions failed:", error);
+
+      return res.status(500).json({
+        success: false,
+        error: "Could not load live sessions."
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// ADMIN: GIFT HISTORY
+// GET /admin/gifts
+// --------------------------------------------------
+
+app.get(
+  "/admin/gifts",
+  adminOnly,
+  async (req, res) => {
+    try {
+      const snapshot = await db
+        .collectionGroup("gifts")
+        .limit(200)
+        .get();
+
+      const gifts = snapshot.docs.map((doc) => {
+        const data = doc.data();
+
+        return {
+          id: doc.id,
+          sessionId: doc.ref.parent.parent
+            ? doc.ref.parent.parent.id
+            : data.sessionId || "",
+          senderUid: data.senderUid || "",
+          hostUid: data.hostUid || "",
+          giftName: data.giftName || "",
+          emoji: data.emoji || "",
+          price: data.price || 0,
+          hostDiamonds: data.hostDiamonds || 0,
+          createdAt: safeDate(data.createdAt)
+        };
+      });
+
+      gifts.sort((a, b) => {
+        return String(b.createdAt || "").localeCompare(
+          String(a.createdAt || "")
+        );
+      });
+
+      return res.json({
+        success: true,
+        count: gifts.length,
+        gifts
+      });
+    } catch (error) {
+      console.error("Admin gifts failed:", error);
+
+      return res.status(500).json({
+        success: false,
+        error: "Could not load gift history."
+      });
+    }
+  }
+);
+
+// --------------------------------------------------
+// NOT FOUND
+// --------------------------------------------------
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -365,3 +766,4 @@ app.use((req, res) => {
 });
 
 export default app;
+```
