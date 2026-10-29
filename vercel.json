@@ -1,3 +1,23 @@
 {
-"version": 2
+"version": 2,
+"builds": [
+{
+"src": "server.js",
+"use": "@vercel/node"
+},
+{
+"src": "public/**",
+"use": "@vercel/static"
+}
+],
+"routes": [
+{
+"src": "/admin.html",
+"dest": "/public/admin.html"
+},
+{
+"src": "/(.*)",
+"dest": "/server.js"
+}
+]
 }
