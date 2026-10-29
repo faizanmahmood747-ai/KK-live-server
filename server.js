@@ -1,4 +1,4 @@
-```javascript
+
 import express from "express";
 import { AccessToken } from "livekit-server-sdk";
 import admin from "firebase-admin";
@@ -677,4 +677,3 @@ app.use((error, req, res, next) => {
 });
 
 export default app;
-```
