@@ -1,1188 +1,1035 @@
+```javascript
 import express from "express";
 import { AccessToken } from "livekit-server-sdk";
 import admin from "firebase-admin";
 
 const app = express();
 
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "8mb" }));
+
+const PORT = process.env.PORT || 3000;
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+
 const ADMIN_UID = process.env.ADMIN_UID;
 
-const db = (() => {
-  try {
-    if (admin.apps.length > 0) {
-      return admin.firestore();
+const IMAGEKIT_PRIVATE_KEY = process.env.IMAGEKIT_PRIVATE_KEY;
+const IMAGEKIT_PUBLIC_KEY = process.env.IMAGEKIT_PUBLIC_KEY;
+const IMAGEKIT_URL_ENDPOINT = process.env.IMAGEKIT_URL_ENDPOINT;
+
+let firebaseReady = false;
+
+if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
+        const serviceAccount = JSON.parse(
+            process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+        );
+
+        if (!admin.apps.length) {
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount)
+            });
+        }
+
+        firebaseReady = true;
+        console.log("Firebase connected");
+    } catch (error) {
+        console.error("Firebase initialization failed:", error.message);
     }
+}
 
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+const db = () => admin.firestore();
 
-    if (!raw) {
-      console.error("FIREBASE_SERVICE_ACCOUNT_JSON is missing");
-      return null;
-    }
-
-    admin.initializeApp({
-      credential: admin.credential.cert(JSON.parse(raw))
-    });
-
-    return admin.firestore();
-  } catch (error) {
-    console.error("Firebase initialization error:", error.message);
-    return null;
-  }
-})();
-
-const firebaseReady = Boolean(db);
-
-const GIFTS = {
-  Rose: { price: 50, emoji: "🌹" },
-  Heart: { price: 200, emoji: "❤️" },
-  Diamond: { price: 500, emoji: "💎" },
-  Crown: { price: 1000, emoji: "👑" },
-  Rocket: { price: 5000, emoji: "🚀" },
-  Lion: { price: 10000, emoji: "🦁" }
-};
+const GIFTS = [
+    { id: "rose", name: "Rose", emoji: "🌹", coins: 50 },
+    { id: "heart", name: "Heart", emoji: "❤️", coins: 200 },
+    { id: "diamond", name: "Diamond", emoji: "💎", coins: 500 },
+    { id: "crown", name: "Crown", emoji: "👑", coins: 1000 },
+    { id: "rocket", name: "Rocket", emoji: "🚀", coins: 5000 },
+    { id: "lion", name: "Lion", emoji: "🦁", coins: 10000 }
+];
 
 const RECHARGE_PACKAGES = {
-  100: 4000,
-  500: 20000,
-  1000: 40000,
-  2000: 80000,
-  5000: 200000
+    100: 4000,
+    500: 20000,
+    1000: 40000,
+    2000: 80000,
+    5000: 200000
 };
 
-const REQUIRED_GIFT_COINS = 200000;
-const REQUIRED_DIAMONDS = 60000;
+const WITHDRAWAL_GIFT_COINS = 200000;
+const WITHDRAWAL_DIAMONDS = 60000;
 const WITHDRAWAL_AMOUNT = 1500;
 
-// ---------------- MIDDLEWARE ----------------
-
-function requireFirebase(req, res, next) {
-  if (!db) {
-    return res.status(503).json({
-      success: false,
-      error: "Firebase is not ready."
-    });
-  }
-
-  next();
-}
-
-async function authenticateUser(req, res, next) {
-  try {
-    const header = req.headers.authorization || "";
-
-    if (!header.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        error: "Firebase login token is required."
-      });
-    }
-
-    const decoded = await admin.auth().verifyIdToken(
-      header.slice(7).trim()
-    );
-
-    req.user = { uid: decoded.uid };
-    next();
-  } catch (error) {
-    console.error("Authentication error:", error.message);
-
-    return res.status(401).json({
-      success: false,
-      error: "Login verification failed."
-    });
-  }
-}
-
-function adminOnly(req, res, next) {
-  if (!ADMIN_UID) {
-    return res.status(503).json({
-      success: false,
-      error: "ADMIN_UID is missing."
-    });
-  }
-
-  authenticateUser(req, res, (error) => {
-    if (error) return next(error);
-
-    if (req.user.uid !== ADMIN_UID) {
-      return res.status(403).json({
-        success: false,
-        error: "Admin access denied."
-      });
-    }
-
-    next();
-  });
+function validText(value, max = 200) {
+    return typeof value === "string" &&
+        value.trim().length > 0 &&
+        value.trim().length <= max;
 }
 
 function validUid(uid) {
-  return typeof uid === "string" &&
-    uid.length > 0 &&
-    uid.length <= 128 &&
-    !uid.includes("/");
+    return typeof uid === "string" &&
+        uid.length >= 10 &&
+        uid.length <= 150;
 }
 
-function dateValue(value) {
-  if (!value) return null;
+async function requireFirebase(req, res, next) {
+    try {
+        if (!firebaseReady) {
+            return res.status(503).json({
+                success: false,
+                message: "Firebase is not configured."
+            });
+        }
 
-  if (typeof value.toDate === "function") {
-    return value.toDate().toISOString();
-  }
+        const authorization = req.headers.authorization || "";
 
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
+        if (!authorization.startsWith("Bearer ")) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication required."
+            });
+        }
 
-  return value;
+        const token = authorization.substring(7);
+
+        const decoded = await admin.auth().verifyIdToken(token);
+
+        req.user = decoded;
+
+        next();
+
+    } catch (error) {
+        return res.status(401).json({
+            success: false,
+            message: "Invalid authentication."
+        });
+    }
 }
 
-function validText(value, max = 150) {
-  return typeof value === "string" &&
-    value.trim().length > 0 &&
-    value.trim().length <= max;
-}
+function adminOnly(req, res, next) {
+    if (!ADMIN_UID || req.user.uid !== ADMIN_UID) {
+        return res.status(403).json({
+            success: false,
+            message: "Admin access denied."
+        });
+    }
 
-// ---------------- HEALTH CHECK ----------------
+    next();
+}
 
 app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "KK Live server is running.",
-    firebaseReady,
-    livekitConfigured: Boolean(
-      LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET
-    )
-  });
+    res.json({
+        success: true,
+        message: "KK Live server is running.",
+        firebaseReady,
+        livekitConfigured: Boolean(
+            LIVEKIT_URL &&
+            LIVEKIT_API_KEY &&
+            LIVEKIT_API_SECRET
+        ),
+        imagekitConfigured: Boolean(
+            IMAGEKIT_PRIVATE_KEY &&
+            IMAGEKIT_PUBLIC_KEY &&
+            IMAGEKIT_URL_ENDPOINT
+        )
+    });
 });
 
-// ---------------- GIFTS LIST ----------------
+/* GIFTS */
 
 app.get("/gifts", (req, res) => {
-  const gifts = Object.entries(GIFTS).map(([name, gift]) => ({
-    name,
-    price: gift.price,
-    emoji: gift.emoji
-  }));
-
-  res.json({ success: true, gifts });
+    res.json({
+        success: true,
+        gifts: GIFTS
+    });
 });
 
-// ---------------- LIVEKIT TOKEN ----------------
+/* LIVEKIT TOKEN */
 
 app.get("/token", async (req, res) => {
-  try {
-    const room = String(req.query.room || "").trim();
-    const identity = String(req.query.identity || "").trim();
-
-    if (!room || !identity || room.length > 128 || identity.length > 128) {
-      return res.status(400).json({
-        success: false,
-        error: "Valid room and identity are required."
-      });
-    }
-
-    if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
-      return res.status(503).json({
-        success: false,
-        error: "LiveKit environment variables are missing."
-      });
-    }
-
-    const token = new AccessToken(
-      LIVEKIT_API_KEY,
-      LIVEKIT_API_SECRET,
-      { identity, ttl: "1h" }
-    );
-
-    token.addGrant({
-      roomJoin: true,
-      room,
-      canPublish: true,
-      canSubscribe: true
-    });
-
-    return res.json({
-      success: true,
-      token: await token.toJwt(),
-      url: LIVEKIT_URL,
-      room,
-      identity
-    });
-  } catch (error) {
-    console.error("LiveKit token error:", error.message);
-
-    return res.status(500).json({
-      success: false,
-      error: "Could not generate LiveKit token."
-    });
-  }
-});
-
-// ---------------- WALLET ----------------
-
-app.get(
-  "/wallet",
-  requireFirebase,
-  authenticateUser,
-  async (req, res) => {
     try {
-      const snap = await db.collection("users")
-        .doc(req.user.uid)
-        .get();
+        const { room, identity } = req.query;
 
-      if (!snap.exists) {
-        return res.status(404).json({
-          success: false,
-          error: "User profile not found."
-        });
-      }
-
-      const data = snap.data();
-
-      return res.json({
-        success: true,
-        coins: data.coins ?? 0,
-        diamonds: data.diamonds ?? 0,
-        giftCoinsReceived: data.giftCoinsReceived ?? 0,
-        withdrawalReservedDiamonds:
-          data.withdrawalReservedDiamonds ?? 0
-      });
-    } catch (error) {
-      console.error("Wallet error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not load wallet."
-      });
-    }
-  }
-);
-
-// ---------------- SEND GIFT ----------------
-
-app.post(
-  "/gift",
-  requireFirebase,
-  authenticateUser,
-  async (req, res) => {
-    try {
-      const senderUid = req.user.uid;
-      const sessionId = String(req.body?.sessionId || "").trim();
-      const giftName = String(req.body?.giftName || "").trim();
-      const gift = GIFTS[giftName];
-
-      if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId) || !gift) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid session ID or gift."
-        });
-      }
-
-      const userRef = db.collection("users").doc(senderUid);
-      const sessionRef = db.collection("live_sessions").doc(sessionId);
-      const giftRef = sessionRef.collection("gifts").doc();
-
-      const result = await db.runTransaction(async (tx) => {
-        const userSnap = await tx.get(userRef);
-        const sessionSnap = await tx.get(sessionRef);
-
-        if (!userSnap.exists || !sessionSnap.exists) {
-          throw new Error("User or live session not found.");
+        if (!validText(room, 100) || !validText(identity, 100)) {
+            return res.status(400).json({
+                success: false,
+                message: "room and identity are required"
+            });
         }
-
-        const userData = userSnap.data();
-        const sessionData = sessionSnap.data();
-
-        const hostUid = String(
-          sessionData.hostUid || sessionData.userId || ""
-        ).trim();
-
-        if (!validUid(hostUid) || hostUid === senderUid) {
-          throw new Error("Invalid host or self-gifting is not allowed.");
-        }
-
-        if (sessionData.status !== "live") {
-          throw new Error("This live session is not active.");
-        }
-
-        const hostRef = db.collection("users").doc(hostUid);
-        const hostSnap = await tx.get(hostRef);
-
-        if (!hostSnap.exists) {
-          throw new Error("Host profile not found.");
-        }
-
-        const coins = userData.coins ?? 0;
-        const hostData = hostSnap.data();
 
         if (
-          !Number.isSafeInteger(coins) ||
-          coins < gift.price
+            !LIVEKIT_URL ||
+            !LIVEKIT_API_KEY ||
+            !LIVEKIT_API_SECRET
         ) {
-          throw new Error("Not enough coins.");
+            return res.status(500).json({
+                success: false,
+                message: "LiveKit is not configured."
+            });
         }
 
-        const oldDiamonds = hostData.diamonds ?? 0;
-        const oldGiftCoins = hostData.giftCoinsReceived ?? 0;
-        const earnedDiamonds = Math.floor(gift.price * 0.30);
-
-        if (
-          !Number.isSafeInteger(oldDiamonds) ||
-          oldDiamonds < 0 ||
-          !Number.isSafeInteger(oldGiftCoins) ||
-          oldGiftCoins < 0 ||
-          oldDiamonds + earnedDiamonds > Number.MAX_SAFE_INTEGER ||
-          oldGiftCoins + gift.price > Number.MAX_SAFE_INTEGER
-        ) {
-          throw new Error("Invalid host wallet balance.");
-        }
-
-        tx.update(userRef, {
-          coins: coins - gift.price
-        });
-
-        tx.update(hostRef, {
-          diamonds: oldDiamonds + earnedDiamonds,
-          giftCoinsReceived: oldGiftCoins + gift.price
-        });
-
-        tx.set(giftRef, {
-          senderUid,
-          hostUid,
-          sessionId,
-          giftName,
-          emoji: gift.emoji,
-          price: gift.price,
-          hostDiamonds: earnedDiamonds,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          coins: coins - gift.price,
-          diamonds: oldDiamonds + earnedDiamonds,
-          giftCoinsReceived: oldGiftCoins + gift.price
-        };
-      });
-
-      return res.json({
-        success: true,
-        giftName,
-        emoji: gift.emoji,
-        coins: result.coins,
-        hostDiamonds: result.diamonds,
-        giftCoinsReceived: result.giftCoinsReceived
-      });
-    } catch (error) {
-      console.error("Gift error:", error.message);
-
-      return res.status(400).json({
-        success: false,
-        error: error.message || "Could not send gift."
-      });
-    }
-  }
-);
-
-// ---------------- RECHARGE REQUEST ----------------
-// POST /recharge/request
-// amount, method, transactionReference, screenshotUrl
-
-app.post(
-  "/recharge/request",
-  requireFirebase,
-  authenticateUser,
-  async (req, res) => {
-    try {
-      const amount = req.body?.amount;
-      const method = String(req.body?.method || "").trim();
-      const transactionReference =
-        String(req.body?.transactionReference || "").trim();
-      const screenshotUrl = String(req.body?.screenshotUrl || "").trim();
-
-      const coins = RECHARGE_PACKAGES[amount];
-
-      if (!coins) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid recharge package."
-        });
-      }
-
-      if (!["Easypaisa", "NBP"].includes(method)) {
-        return res.status(400).json({
-          success: false,
-          error: "Choose Easypaisa or NBP."
-        });
-      }
-
-      if (!validText(transactionReference, 100)) {
-        return res.status(400).json({
-          success: false,
-          error: "Transaction reference is required."
-        });
-      }
-
-      if (
-        !validText(screenshotUrl, 2000) ||
-        !screenshotUrl.startsWith("https://")
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: "A valid payment screenshot URL is required."
-        });
-      }
-
-      const userRef = db.collection("users").doc(req.user.uid);
-      const userSnap = await userRef.get();
-
-      if (!userSnap.exists) {
-        return res.status(404).json({
-          success: false,
-          error: "User profile not found."
-        });
-      }
-
-      const requestRef = db.collection("recharge_requests").doc();
-
-      await requestRef.set({
-        uid: req.user.uid,
-        userName: userSnap.data().name || "Unknown",
-        amount,
-        coins,
-        method,
-        transactionReference,
-        screenshotUrl,
-        status: "pending",
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      return res.json({
-        success: true,
-        message: "Recharge request submitted. Waiting for admin approval.",
-        requestId: requestRef.id,
-        amount,
-        coins
-      });
-    } catch (error) {
-      console.error("Recharge request error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not submit recharge request."
-      });
-    }
-  }
-);
-
-// ---------------- USER RECHARGE HISTORY ----------------
-
-app.get(
-  "/recharge/my-requests",
-  requireFirebase,
-  authenticateUser,
-  async (req, res) => {
-    try {
-      const snap = await db.collection("recharge_requests")
-        .where("uid", "==", req.user.uid)
-        .limit(100)
-        .get();
-
-      const requests = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: dateValue(doc.data().createdAt)
-      }));
-
-      return res.json({ success: true, requests });
-    } catch (error) {
-      console.error("Recharge history error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not load recharge history."
-      });
-    }
-  }
-);
-
-// ---------------- WITHDRAWAL REQUEST ----------------
-// POST /withdrawal/request
-// method, accountTitle, accountNumber, bankName
-
-app.post(
-  "/withdrawal/request",
-  requireFirebase,
-  authenticateUser,
-  async (req, res) => {
-    try {
-      const uid = req.user.uid;
-      const method = String(req.body?.method || "").trim();
-      const accountTitle = String(req.body?.accountTitle || "").trim();
-      const accountNumber = String(req.body?.accountNumber || "").trim();
-      const bankName = String(req.body?.bankName || "").trim();
-
-      if (!["Easypaisa", "JazzCash", "Bank"].includes(method)) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid withdrawal method."
-        });
-      }
-
-      if (!validText(accountTitle, 100)) {
-        return res.status(400).json({
-          success: false,
-          error: "Account title is required."
-        });
-      }
-
-      if (!validText(accountNumber, 100)) {
-        return res.status(400).json({
-          success: false,
-          error: "Account number or IBAN is required."
-        });
-      }
-
-      if (method === "Bank" && !validText(bankName, 100)) {
-        return res.status(400).json({
-          success: false,
-          error: "Bank name is required."
-        });
-      }
-
-      const userRef = db.collection("users").doc(uid);
-      const requestRef = db.collection("withdrawal_requests").doc();
-
-      await db.runTransaction(async (tx) => {
-        const userSnap = await tx.get(userRef);
-
-        if (!userSnap.exists) {
-          throw new Error("User profile not found.");
-        }
-
-        const data = userSnap.data();
-
-        const giftCoinsReceived = data.giftCoinsReceived ?? 0;
-        const diamonds = data.diamonds ?? 0;
-        const reserved = data.withdrawalReservedDiamonds ?? 0;
-        const withdrawn = data.withdrawnDiamonds ?? 0;
-
-        if (
-          !Number.isSafeInteger(giftCoinsReceived) ||
-          !Number.isSafeInteger(diamonds) ||
-          !Number.isSafeInteger(reserved) ||
-          !Number.isSafeInteger(withdrawn)
-        ) {
-          throw new Error("Invalid wallet values.");
-        }
-
-        const earnedTranches = Math.floor(
-          giftCoinsReceived / REQUIRED_GIFT_COINS
+        const token = new AccessToken(
+            LIVEKIT_API_KEY,
+            LIVEKIT_API_SECRET,
+            {
+                identity: identity.trim(),
+                ttl: "2h"
+            }
         );
 
-        const eligibleDiamonds = earnedTranches * REQUIRED_DIAMONDS;
-        const alreadyUsed = withdrawn + reserved;
-        const availableEligible = eligibleDiamonds - alreadyUsed;
-
-        if (availableEligible < REQUIRED_DIAMONDS) {
-          throw new Error(
-            "You need to receive gifts worth 200,000 Coins before withdrawal."
-          );
-        }
-
-        if (diamonds - reserved < REQUIRED_DIAMONDS) {
-          throw new Error("Insufficient available Diamonds.");
-        }
-
-        tx.update(userRef, {
-          withdrawalReservedDiamonds: reserved + REQUIRED_DIAMONDS
+        token.addGrant({
+            roomJoin: true,
+            room: room.trim(),
+            canPublish: true,
+            canSubscribe: true
         });
 
-        tx.set(requestRef, {
-          uid,
-          userName: data.name || "Unknown",
-          method,
-          accountTitle,
-          accountNumber,
-          bankName: method === "Bank" ? bankName : "",
-          diamonds: REQUIRED_DIAMONDS,
-          amount: WITHDRAWAL_AMOUNT,
-          status: "pending",
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        const jwt = await token.toJwt();
+
+        res.json({
+            success: true,
+            token: jwt,
+            url: LIVEKIT_URL,
+            room: room.trim(),
+            identity: identity.trim()
         });
-      });
 
-      return res.json({
-        success: true,
-        message: "Withdrawal request submitted.",
-        requestId: requestRef.id,
-        diamonds: REQUIRED_DIAMONDS,
-        amount: WITHDRAWAL_AMOUNT
-      });
     } catch (error) {
-      console.error("Withdrawal request error:", error.message);
-
-      return res.status(400).json({
-        success: false,
-        error: error.message || "Could not submit withdrawal."
-      });
+        res.status(500).json({
+            success: false,
+            message: "Token generation failed."
+        });
     }
-  }
-);
-
-// ---------------- USER WITHDRAWAL HISTORY ----------------
-
-app.get(
-  "/withdrawal/my-requests",
-  requireFirebase,
-  authenticateUser,
-  async (req, res) => {
-    try {
-      const snap = await db.collection("withdrawal_requests")
-        .where("uid", "==", req.user.uid)
-        .limit(100)
-        .get();
-
-      const requests = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: dateValue(doc.data().createdAt)
-      }));
-
-      return res.json({ success: true, requests });
-    } catch (error) {
-      console.error("Withdrawal history error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not load withdrawal history."
-      });
-    }
-  }
-);
-
-// ---------------- ADMIN SUMMARY ----------------
-
-app.get("/admin/summary", requireFirebase, adminOnly, async (req, res) => {
-  try {
-    const [usersSnap, sessionsSnap] = await Promise.all([
-      db.collection("users").get(),
-      db.collection("live_sessions").get()
-    ]);
-
-    let totalCoins = 0;
-    let totalDiamonds = 0;
-    let liveSessions = 0;
-
-    usersSnap.forEach((doc) => {
-      const data = doc.data();
-
-      if (Number.isSafeInteger(data.coins) && data.coins >= 0) {
-        totalCoins += data.coins;
-      }
-
-      if (Number.isSafeInteger(data.diamonds) && data.diamonds >= 0) {
-        totalDiamonds += data.diamonds;
-      }
-    });
-
-    sessionsSnap.forEach((doc) => {
-      if (doc.data().status === "live") liveSessions++;
-    });
-
-    return res.json({
-      success: true,
-      totalUsers: usersSnap.size,
-      totalCoins,
-      totalDiamonds,
-      totalLiveSessions: liveSessions
-    });
-  } catch (error) {
-    console.error("Admin summary error:", error.message);
-
-    return res.status(500).json({
-      success: false,
-      error: "Could not load admin summary."
-    });
-  }
 });
 
-// ---------------- ADMIN USERS ----------------
+/* IMAGEKIT SCREENSHOT UPLOAD */
 
-app.get("/admin/users", requireFirebase, adminOnly, async (req, res) => {
-  try {
-    const snap = await db.collection("users").limit(200).get();
+app.post(
+    "/upload/recharge-screenshot",
+    requireFirebase,
+    async (req, res) => {
+        try {
+            if (
+                !IMAGEKIT_PRIVATE_KEY ||
+                !IMAGEKIT_PUBLIC_KEY ||
+                !IMAGEKIT_URL_ENDPOINT
+            ) {
+                return res.status(500).json({
+                    success: false,
+                    message: "ImageKit is not configured."
+                });
+            }
 
-    const users = snap.docs.map((doc) => {
-      const data = doc.data();
+            const { file, fileName, mimeType } = req.body;
 
-      return {
-        uid: doc.id,
-        name: data.name || data.displayName || "Unknown",
-        email: data.email || "",
-        country: data.country || "",
-        coins: data.coins ?? 0,
-        diamonds: data.diamonds ?? 0,
-        giftCoinsReceived: data.giftCoinsReceived ?? 0,
-        createdAt: dateValue(data.createdAt)
-      };
-    });
+            if (
+                typeof file !== "string" ||
+                !validText(fileName, 150) ||
+                typeof mimeType !== "string" ||
+                !mimeType.startsWith("image/")
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid image data."
+                });
+            }
 
-    return res.json({ success: true, count: users.length, users });
-  } catch (error) {
-    console.error("Admin users error:", error.message);
+            const imageBuffer = Buffer.from(file, "base64");
 
-    return res.status(500).json({
-      success: false,
-      error: "Could not load users."
-    });
-  }
+            if (
+                imageBuffer.length === 0 ||
+                imageBuffer.length > 5 * 1024 * 1024
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Image must be under 5 MB."
+                });
+            }
+
+            const allowedTypes = [
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+            ];
+
+            if (!allowedTypes.includes(mimeType)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Only JPG, PNG and WEBP images are allowed."
+                });
+            }
+
+            const form = new FormData();
+
+            const blob = new Blob(
+                [imageBuffer],
+                { type: mimeType }
+            );
+
+            form.append("file", blob, fileName);
+            form.append("fileName", fileName);
+            form.append(
+                "folder",
+                `/kk-live/recharge-screenshots/${req.user.uid}`
+            );
+
+            const authorization = Buffer
+                .from(`${IMAGEKIT_PRIVATE_KEY}:`)
+                .toString("base64");
+
+            const uploadResponse = await fetch(
+                "https://upload.imagekit.io/api/v1/files/upload",
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Basic ${authorization}`
+                    },
+                    body: form
+                }
+            );
+
+            const uploadResult = await uploadResponse.json();
+
+            if (!uploadResponse.ok || !uploadResult.url) {
+                console.error(
+                    "ImageKit error:",
+                    uploadResult.message || uploadResponse.status
+                );
+
+                return res.status(502).json({
+                    success: false,
+                    message: "ImageKit upload failed."
+                });
+            }
+
+            return res.json({
+                success: true,
+                url: uploadResult.url,
+                fileId: uploadResult.fileId
+            });
+
+        } catch (error) {
+            console.error("Image upload error:", error.message);
+
+            return res.status(500).json({
+                success: false,
+                message: "Screenshot upload failed."
+            });
+        }
+    }
+);
+
+/* WALLET */
+
+app.get("/wallet", requireFirebase, async (req, res) => {
+    try {
+        const snapshot = await db()
+            .collection("users")
+            .doc(req.user.uid)
+            .get();
+
+        const data = snapshot.data() || {};
+
+        res.json({
+            success: true,
+            coins: data.coins || 0,
+            diamonds: data.diamonds || 0,
+            giftCoinsReceived: data.giftCoinsReceived || 0
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Wallet load failed."
+        });
+    }
 });
 
-// ---------------- ADMIN ADD COINS ----------------
+/* SEND GIFT */
 
-app.post(
-  "/admin/users/:uid/coins",
-  requireFirebase,
-  adminOnly,
-  async (req, res) => {
+app.post("/gift", requireFirebase, async (req, res) => {
     try {
-      const uid = req.params.uid;
-      const amount = req.body?.amount;
-
-      if (!validUid(uid)) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid UID."
-        });
-      }
-
-      if (
-        typeof amount !== "number" ||
-        !Number.isSafeInteger(amount) ||
-        amount < 1 ||
-        amount > 1000000
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: "Amount must be from 1 to 1000000."
-        });
-      }
-
-      const userRef = db.collection("users").doc(uid);
-
-      const balance = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(userRef);
-
-        if (!snap.exists) {
-          throw new Error("User profile not found.");
-        }
-
-        const oldCoins = snap.data().coins ?? 0;
-
-        if (!Number.isSafeInteger(oldCoins) || oldCoins < 0) {
-          throw new Error("Invalid current coin balance.");
-        }
-
-        const newBalance = oldCoins + amount;
-
-        tx.update(userRef, { coins: newBalance });
-
-        const logRef = db.collection("admin_logs").doc();
-
-        tx.set(logRef, {
-          action: "add_coins",
-          adminUid: req.user.uid,
-          targetUid: uid,
-          amount,
-          balanceAfter: newBalance,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return newBalance;
-      });
-
-      return res.json({
-        success: true,
-        uid,
-        addedCoins: amount,
-        newBalance: balance
-      });
-    } catch (error) {
-      console.error("Add coins error:", error.message);
-
-      return res.status(400).json({
-        success: false,
-        error: error.message
-      });
-    }
-  }
-);
-
-// ---------------- ADMIN RECHARGE LIST ----------------
-
-app.get(
-  "/admin/recharges",
-  requireFirebase,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const snap = await db.collection("recharge_requests")
-        .limit(200)
-        .get();
-
-      const requests = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: dateValue(doc.data().createdAt)
-      }));
-
-      return res.json({ success: true, requests });
-    } catch (error) {
-      console.error("Admin recharge list error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not load recharge requests."
-      });
-    }
-  }
-);
-
-// ---------------- ADMIN RECHARGE DECISION ----------------
-// POST /admin/recharges/REQUEST_ID/decision
-// Body: { "decision": "approve" } OR { "decision": "reject" }
-
-app.post(
-  "/admin/recharges/:id/decision",
-  requireFirebase,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const decision = String(req.body?.decision || "").toLowerCase();
-
-      if (!["approve", "reject"].includes(decision)) {
-        return res.status(400).json({
-          success: false,
-          error: "Decision must be approve or reject."
-        });
-      }
-
-      const requestRef = db.collection("recharge_requests")
-        .doc(req.params.id);
-
-      await db.runTransaction(async (tx) => {
-        const requestSnap = await tx.get(requestRef);
-
-        if (!requestSnap.exists) {
-          throw new Error("Recharge request not found.");
-        }
-
-        const request = requestSnap.data();
-
-        if (request.status !== "pending") {
-          throw new Error("This request has already been processed.");
-        }
-
-        const userRef = db.collection("users").doc(request.uid);
-        const userSnap = await tx.get(userRef);
-
-        if (!userSnap.exists) {
-          throw new Error("User profile not found.");
-        }
-
-        if (decision === "approve") {
-          const oldCoins = userSnap.data().coins ?? 0;
-
-          if (
-            !Number.isSafeInteger(oldCoins) ||
-            oldCoins < 0 ||
-            oldCoins + request.coins > Number.MAX_SAFE_INTEGER
-          ) {
-            throw new Error("Invalid user coin balance.");
-          }
-
-          tx.update(userRef, {
-            coins: oldCoins + request.coins
-          });
-        }
-
-        tx.update(requestRef, {
-          status: decision === "approve" ? "approved" : "rejected",
-          processedBy: req.user.uid,
-          processedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        const logRef = db.collection("admin_logs").doc();
-
-        tx.set(logRef, {
-          action: `recharge_${decision}`,
-          adminUid: req.user.uid,
-          requestId: req.params.id,
-          targetUid: request.uid,
-          amount: request.amount,
-          coins: request.coins,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-      });
-
-      return res.json({
-        success: true,
-        message: `Recharge ${decision}d successfully.`
-      });
-    } catch (error) {
-      console.error("Recharge decision error:", error.message);
-
-      return res.status(400).json({
-        success: false,
-        error: error.message
-      });
-    }
-  }
-);
-
-// ---------------- ADMIN WITHDRAWAL LIST ----------------
-
-app.get(
-  "/admin/withdrawals",
-  requireFirebase,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const snap = await db.collection("withdrawal_requests")
-        .limit(200)
-        .get();
-
-      const requests = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: dateValue(doc.data().createdAt)
-      }));
-
-      return res.json({ success: true, requests });
-    } catch (error) {
-      console.error("Admin withdrawal list error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not load withdrawal requests."
-      });
-    }
-  }
-);
-
-// ---------------- ADMIN WITHDRAWAL DECISION ----------------
-// POST /admin/withdrawals/REQUEST_ID/decision
-// Body: { "decision": "approve" } OR { "decision": "reject" }
-
-app.post(
-  "/admin/withdrawals/:id/decision",
-  requireFirebase,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const decision = String(req.body?.decision || "").toLowerCase();
-
-      if (!["approve", "reject"].includes(decision)) {
-        return res.status(400).json({
-          success: false,
-          error: "Decision must be approve or reject."
-        });
-      }
-
-      const requestRef = db.collection("withdrawal_requests")
-        .doc(req.params.id);
-
-      await db.runTransaction(async (tx) => {
-        const requestSnap = await tx.get(requestRef);
-
-        if (!requestSnap.exists) {
-          throw new Error("Withdrawal request not found.");
-        }
-
-        const request = requestSnap.data();
-
-        if (request.status !== "pending") {
-          throw new Error("This request has already been processed.");
-        }
-
-        const userRef = db.collection("users").doc(request.uid);
-        const userSnap = await tx.get(userRef);
-
-        if (!userSnap.exists) {
-          throw new Error("User profile not found.");
-        }
-
-        const data = userSnap.data();
-        const diamonds = data.diamonds ?? 0;
-        const reserved = data.withdrawalReservedDiamonds ?? 0;
-        const withdrawn = data.withdrawnDiamonds ?? 0;
+        const { hostUid, sessionId, giftId, quantity = 1 } = req.body;
 
         if (
-          !Number.isSafeInteger(diamonds) ||
-          !Number.isSafeInteger(reserved) ||
-          !Number.isSafeInteger(withdrawn) ||
-          reserved < request.diamonds ||
-          diamonds < request.diamonds
+            !validUid(hostUid) ||
+            !validText(sessionId, 150) ||
+            !Number.isInteger(quantity) ||
+            quantity < 1 ||
+            quantity > 100
         ) {
-          throw new Error("Invalid withdrawal wallet balance.");
+            return res.status(400).json({
+                success: false,
+                message: "Invalid gift request."
+            });
         }
 
-        if (decision === "approve") {
-          tx.update(userRef, {
-            diamonds: diamonds - request.diamonds,
-            withdrawalReservedDiamonds: reserved - request.diamonds,
-            withdrawnDiamonds: withdrawn + request.diamonds
-          });
-        } else {
-          tx.update(userRef, {
-            withdrawalReservedDiamonds: reserved - request.diamonds
-          });
+        const gift = GIFTS.find(item => item.id === giftId);
+
+        if (!gift) {
+            return res.status(400).json({
+                success: false,
+                message: "Gift not found."
+            });
         }
 
-        tx.update(requestRef, {
-          status: decision === "approve" ? "approved" : "rejected",
-          processedBy: req.user.uid,
-          processedAt: admin.firestore.FieldValue.serverTimestamp()
+        const senderUid = req.user.uid;
+
+        if (senderUid === hostUid) {
+            return res.status(400).json({
+                success: false,
+                message: "You cannot send gifts to yourself."
+            });
+        }
+
+        const totalCoins = gift.coins * quantity;
+        const earnedDiamonds = Math.floor(totalCoins * 0.30);
+
+        await db().runTransaction(async transaction => {
+            const senderRef = db().collection("users").doc(senderUid);
+            const hostRef = db().collection("users").doc(hostUid);
+            const sessionRef = db()
+                .collection("live_sessions")
+                .doc(sessionId);
+
+            const senderSnap = await transaction.get(senderRef);
+            const hostSnap = await transaction.get(hostRef);
+            const sessionSnap = await transaction.get(sessionRef);
+
+            if (!senderSnap.exists || !hostSnap.exists || !sessionSnap.exists) {
+                throw new Error("User or live session not found.");
+            }
+
+            const senderCoins = senderSnap.get("coins") || 0;
+
+            if (senderCoins < totalCoins) {
+                throw new Error("Insufficient coins.");
+            }
+
+            transaction.update(senderRef, {
+                coins: admin.firestore.FieldValue.increment(-totalCoins)
+            });
+
+            transaction.update(hostRef, {
+                diamonds: admin.firestore.FieldValue.increment(earnedDiamonds),
+                giftCoinsReceived: admin.firestore.FieldValue.increment(totalCoins)
+            });
+
+            const giftRef = sessionRef.collection("gifts").doc();
+
+            transaction.set(giftRef, {
+                senderUid,
+                hostUid,
+                giftId,
+                giftName: gift.name,
+                emoji: gift.emoji,
+                quantity,
+                coins: totalCoins,
+                diamonds: earnedDiamonds,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
         });
 
-        const logRef = db.collection("admin_logs").doc();
-
-        tx.set(logRef, {
-          action: `withdrawal_${decision}`,
-          adminUid: req.user.uid,
-          requestId: req.params.id,
-          targetUid: request.uid,
-          amount: request.amount,
-          diamonds: request.diamonds,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        res.json({
+            success: true,
+            message: "Gift sent successfully.",
+            coinsSpent: totalCoins,
+            diamondsEarned: earnedDiamonds
         });
-      });
 
-      return res.json({
-        success: true,
-        message: `Withdrawal ${decision}d successfully.`
-      });
     } catch (error) {
-      console.error("Withdrawal decision error:", error.message);
-
-      return res.status(400).json({
-        success: false,
-        error: error.message
-      });
+        res.status(400).json({
+            success: false,
+            message: error.message || "Gift failed."
+        });
     }
-  }
-);
-
-// ---------------- ADMIN LIVE SESSIONS ----------------
-
-app.get(
-  "/admin/live-sessions",
-  requireFirebase,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const snap = await db.collection("live_sessions").limit(200).get();
-
-      const sessions = snap.docs.map((doc) => {
-        const data = doc.data();
-
-        return {
-          sessionId: doc.id,
-          hostUid: data.hostUid || data.userId || "",
-          hostName: data.hostName || "Unknown",
-          roomName: data.roomName || "",
-          status: data.status || "unknown",
-          startedAt: dateValue(data.startedAt)
-        };
-      });
-
-      return res.json({
-        success: true,
-        count: sessions.length,
-        sessions
-      });
-    } catch (error) {
-      console.error("Admin sessions error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not load live sessions."
-      });
-    }
-  }
-);
-
-// ---------------- ADMIN GIFT HISTORY ----------------
-
-app.get(
-  "/admin/gifts",
-  requireFirebase,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const snap = await db.collectionGroup("gifts").limit(200).get();
-
-      const gifts = snap.docs.map((doc) => {
-        const data = doc.data();
-
-        return {
-          id: doc.id,
-          sessionId: doc.ref.parent.parent?.id || data.sessionId || "",
-          senderUid: data.senderUid || "",
-          hostUid: data.hostUid || "",
-          giftName: data.giftName || "",
-          emoji: data.emoji || "",
-          price: data.price || 0,
-          hostDiamonds: data.hostDiamonds || 0,
-          createdAt: dateValue(data.createdAt)
-        };
-      });
-
-      gifts.sort((a, b) =>
-        String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-      );
-
-      return res.json({
-        success: true,
-        count: gifts.length,
-        gifts
-      });
-    } catch (error) {
-      console.error("Admin gifts error:", error.message);
-
-      return res.status(500).json({
-        success: false,
-        error: "Could not load gift history."
-      });
-    }
-  }
-);
-
-// ---------------- UNKNOWN ROUTE ----------------
-
-app.use((req, res) => {
-  return res.status(404).json({
-    success: false,
-    error: "Route not found."
-  });
 });
 
-// ---------------- FINAL ERROR HANDLER ----------------
+/* RECHARGE REQUEST */
+
+app.post("/recharge/request", requireFirebase, async (req, res) => {
+    try {
+        const {
+            amount,
+            method,
+            transactionReference,
+            screenshotUrl
+        } = req.body;
+
+        const coins = RECHARGE_PACKAGES[Number(amount)];
+
+        if (!coins) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid recharge package."
+            });
+        }
+
+        if (!["Easypaisa", "NBP"].includes(method)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid payment method."
+            });
+        }
+
+        if (!validText(transactionReference, 150)) {
+            return res.status(400).json({
+                success: false,
+                message: "Transaction reference is required."
+            });
+        }
+
+        if (
+            typeof screenshotUrl !== "string" ||
+            !screenshotUrl.startsWith("https://") ||
+            !screenshotUrl.startsWith(IMAGEKIT_URL_ENDPOINT)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid screenshot URL."
+            });
+        }
+
+        const userRef = db().collection("users").doc(req.user.uid);
+        const userSnap = await userRef.get();
+
+        if (!userSnap.exists) {
+            return res.status(404).json({
+                success: false,
+                message: "User profile not found."
+            });
+        }
+
+        const requestRef = db().collection("recharge_requests").doc();
+
+        await requestRef.set({
+            uid: req.user.uid,
+            userName: userSnap.get("name") || "User",
+            amount: Number(amount),
+            coins,
+            method,
+            transactionReference: transactionReference.trim(),
+            screenshotUrl,
+            status: "pending",
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.json({
+            success: true,
+            message: "Recharge request submitted successfully.",
+            requestId: requestRef.id
+        });
+
+    } catch (error) {
+        console.error("Recharge request error:", error.message);
+
+        res.status(500).json({
+            success: false,
+            message: "Recharge request failed."
+        });
+    }
+});
+
+app.get("/recharge/my-requests", requireFirebase, async (req, res) => {
+    try {
+        const snapshot = await db()
+            .collection("recharge_requests")
+            .where("uid", "==", req.user.uid)
+            .limit(50)
+            .get();
+
+        res.json({
+            success: true,
+            requests: snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Could not load recharge requests."
+        });
+    }
+});
+
+/* WITHDRAWAL REQUEST */
+
+app.post("/withdrawal/request", requireFirebase, async (req, res) => {
+    try {
+        const {
+            method,
+            accountTitle,
+            accountNumber,
+            bankName
+        } = req.body;
+
+        if (!["Easypaisa", "JazzCash", "Bank"].includes(method)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid withdrawal method."
+            });
+        }
+
+        if (
+            !validText(accountTitle, 150) ||
+            !validText(accountNumber, 100)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Account details are required."
+            });
+        }
+
+        if (method === "Bank" && !validText(bankName, 100)) {
+            return res.status(400).json({
+                success: false,
+                message: "Bank name is required."
+            });
+        }
+
+        const uid = req.user.uid;
+
+        await db().runTransaction(async transaction => {
+            const userRef = db().collection("users").doc(uid);
+            const userSnap = await transaction.get(userRef);
+
+            if (!userSnap.exists) {
+                throw new Error("User not found.");
+            }
+
+            const giftCoins = userSnap.get("giftCoinsReceived") || 0;
+            const diamonds = userSnap.get("diamonds") || 0;
+
+            if (giftCoins < WITHDRAWAL_GIFT_COINS) {
+                throw new Error("You need 200,000 gift coins to unlock withdrawal.");
+            }
+
+            if (diamonds < WITHDRAWAL_DIAMONDS) {
+                throw new Error("You need 60,000 diamonds.");
+            }
+
+            transaction.update(userRef, {
+                diamonds: admin.firestore.FieldValue.increment(-WITHDRAWAL_DIAMONDS),
+                reservedDiamonds: admin.firestore.FieldValue.increment(WITHDRAWAL_DIAMONDS)
+            });
+
+            const requestRef = db().collection("withdrawal_requests").doc();
+
+            transaction.set(requestRef, {
+                uid,
+                userName: userSnap.get("name") || "User",
+                method,
+                accountTitle: accountTitle.trim(),
+                accountNumber: accountNumber.trim(),
+                bankName: method === "Bank" ? bankName.trim() : "",
+                diamonds: WITHDRAWAL_DIAMONDS,
+                amount: WITHDRAWAL_AMOUNT,
+                status: "pending",
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        res.json({
+            success: true,
+            message: "Withdrawal request submitted."
+        });
+
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message || "Withdrawal failed."
+        });
+    }
+});
+
+app.get("/withdrawal/my-requests", requireFirebase, async (req, res) => {
+    try {
+        const snapshot = await db()
+            .collection("withdrawal_requests")
+            .where("uid", "==", req.user.uid)
+            .limit(50)
+            .get();
+
+        res.json({
+            success: true,
+            requests: snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Could not load withdrawal requests."
+        });
+    }
+});
+
+/* ADMIN SUMMARY */
+
+app.get("/admin/summary", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const [users, recharges, withdrawals, sessions] = await Promise.all([
+            db().collection("users").count().get(),
+            db().collection("recharge_requests").where("status", "==", "pending").count().get(),
+            db().collection("withdrawal_requests").where("status", "==", "pending").count().get(),
+            db().collection("live_sessions").count().get()
+        ]);
+
+        res.json({
+            success: true,
+            users: users.data().count,
+            pendingRecharges: recharges.data().count,
+            pendingWithdrawals: withdrawals.data().count,
+            liveSessions: sessions.data().count
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Admin summary failed."
+        });
+    }
+});
+
+/* ADMIN USERS */
+
+app.get("/admin/users", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const snapshot = await db()
+            .collection("users")
+            .limit(200)
+            .get();
+
+        res.json({
+            success: true,
+            users: snapshot.docs.map(doc => ({
+                uid: doc.id,
+                ...doc.data()
+            }))
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Could not load users."
+        });
+    }
+});
+
+app.post("/admin/users/:uid/coins", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const { coins } = req.body;
+        const amount = Number(coins);
+
+        if (
+            !validUid(req.params.uid) ||
+            !Number.isSafeInteger(amount) ||
+            amount < 0 ||
+            amount > 100000000
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid coin amount."
+            });
+        }
+
+        await db().collection("users")
+            .doc(req.params.uid)
+            .set({
+                coins: amount
+            }, { merge: true });
+
+        res.json({
+            success: true,
+            message: "User coins updated."
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Coin update failed."
+        });
+    }
+});
+
+/* ADMIN RECHARGES */
+
+app.get("/admin/recharges", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const snapshot = await db()
+            .collection("recharge_requests")
+            .orderBy("createdAt", "desc")
+            .limit(200)
+            .get();
+
+        res.json({
+            success: true,
+            requests: snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Could not load recharge requests."
+        });
+    }
+});
+
+app.post("/admin/recharges/:id/decision", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const { decision } = req.body;
+
+        if (!["approve", "reject"].includes(decision)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid decision."
+            });
+        }
+
+        await db().runTransaction(async transaction => {
+            const requestRef = db()
+                .collection("recharge_requests")
+                .doc(req.params.id);
+
+            const requestSnap = await transaction.get(requestRef);
+
+            if (!requestSnap.exists) {
+                throw new Error("Recharge request not found.");
+            }
+
+            if (requestSnap.get("status") !== "pending") {
+                throw new Error("Request already processed.");
+            }
+
+            const data = requestSnap.data();
+
+            if (decision === "approve") {
+                const userRef = db().collection("users").doc(data.uid);
+
+                transaction.set(userRef, {
+                    coins: admin.firestore.FieldValue.increment(data.coins)
+                }, { merge: true });
+            }
+
+            transaction.update(requestRef, {
+                status: decision === "approve" ? "approved" : "rejected",
+                reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+                reviewedBy: req.user.uid
+            });
+
+            const logRef = db().collection("admin_logs").doc();
+
+            transaction.set(logRef, {
+                adminUid: req.user.uid,
+                action: `recharge_${decision}`,
+                requestId: req.params.id,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        res.json({
+            success: true,
+            message: `Recharge ${decision}d successfully.`
+        });
+
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+/* ADMIN WITHDRAWALS */
+
+app.get("/admin/withdrawals", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const snapshot = await db()
+            .collection("withdrawal_requests")
+            .orderBy("createdAt", "desc")
+            .limit(200)
+            .get();
+
+        res.json({
+            success: true,
+            requests: snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Could not load withdrawals."
+        });
+    }
+});
+
+app.post("/admin/withdrawals/:id/decision", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const { decision } = req.body;
+
+        if (!["approve", "reject"].includes(decision)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid decision."
+            });
+        }
+
+        await db().runTransaction(async transaction => {
+            const requestRef = db()
+                .collection("withdrawal_requests")
+                .doc(req.params.id);
+
+            const requestSnap = await transaction.get(requestRef);
+
+            if (!requestSnap.exists) {
+                throw new Error("Withdrawal request not found.");
+            }
+
+            if (requestSnap.get("status") !== "pending") {
+                throw new Error("Request already processed.");
+            }
+
+            const data = requestSnap.data();
+
+            const userRef = db().collection("users").doc(data.uid);
+
+            if (decision === "reject") {
+                transaction.set(userRef, {
+                    diamonds: admin.firestore.FieldValue.increment(data.diamonds),
+                    reservedDiamonds: admin.firestore.FieldValue.increment(-data.diamonds)
+                }, { merge: true });
+            } else {
+                transaction.set(userRef, {
+                    reservedDiamonds: admin.firestore.FieldValue.increment(-data.diamonds),
+                    withdrawnDiamonds: admin.firestore.FieldValue.increment(data.diamonds)
+                }, { merge: true });
+            }
+
+            transaction.update(requestRef, {
+                status: decision === "approve" ? "approved" : "rejected",
+                reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+                reviewedBy: req.user.uid
+            });
+
+            const logRef = db().collection("admin_logs").doc();
+
+            transaction.set(logRef, {
+                adminUid: req.user.uid,
+                action: `withdrawal_${decision}`,
+                requestId: req.params.id,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        res.json({
+            success: true,
+            message: `Withdrawal ${decision}d successfully.`
+        });
+
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+/* ADMIN LIVE SESSIONS */
+
+app.get("/admin/live-sessions", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const snapshot = await db()
+            .collection("live_sessions")
+            .limit(200)
+            .get();
+
+        res.json({
+            success: true,
+            sessions: snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Could not load live sessions."
+        });
+    }
+});
+
+/* ADMIN GIFTS */
+
+app.get("/admin/gifts", requireFirebase, adminOnly, async (req, res) => {
+    try {
+        const sessions = await db()
+            .collection("live_sessions")
+            .limit(100)
+            .get();
+
+        const gifts = [];
+
+        for (const session of sessions.docs) {
+            const snapshot = await session.ref
+                .collection("gifts")
+                .limit(100)
+                .get();
+
+            snapshot.docs.forEach(doc => {
+                gifts.push({
+                    id: doc.id,
+                    sessionId: session.id,
+                    ...doc.data()
+                });
+            });
+        }
+
+        res.json({
+            success: true,
+            gifts
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Could not load gifts."
+        });
+    }
+});
+
+/* UNKNOWN ROUTE */
+
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: "Route not found."
+    });
+});
+
+/* ERROR HANDLER */
 
 app.use((error, req, res, next) => {
-  console.error("Unhandled error:", error?.stack || error);
+    console.error("Server error:", error.message);
 
-  if (res.headersSent) return next(error);
-
-  return res.status(500).json({
-    success: false,
-    error: "Internal server error."
-  });
+    res.status(500).json({
+        success: false,
+        message: "Internal server error."
+    });
 });
 
 export default app;
+```
