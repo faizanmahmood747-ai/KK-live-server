@@ -1,4 +1,3 @@
-
 import express from "express";
 import { AccessToken } from "livekit-server-sdk";
 import admin from "firebase-admin";
@@ -73,14 +72,22 @@ const RECHARGE_PACKAGES = {
 };
 
 // =====================================
-// VIP MEMBERSHIP PLANS
+// VIP MEMBERSHIP PLANS - VIP 1 TO 12
 // =====================================
 
 const VIP_PLANS = {
-    1: { level: 1, name: "VIP 1", price: 10000 },
-    2: { level: 2, name: "VIP 2", price: 40000 },
-    3: { level: 3, name: "VIP 3", price: 100000 },
-    4: { level: 4, name: "VIP 4", price: 160000 }
+    1:  { level: 1,  name: "VIP 1",  price: 10000 },
+    2:  { level: 2,  name: "VIP 2",  price: 40000 },
+    3:  { level: 3,  name: "VIP 3",  price: 100000 },
+    4:  { level: 4,  name: "VIP 4",  price: 160000 },
+    5:  { level: 5,  name: "VIP 5",  price: 230000 },
+    6:  { level: 6,  name: "VIP 6",  price: 310000 },
+    7:  { level: 7,  name: "VIP 7",  price: 400000 },
+    8:  { level: 8,  name: "VIP 8",  price: 500000 },
+    9:  { level: 9,  name: "VIP 9",  price: 610000 },
+    10: { level: 10, name: "VIP 10", price: 730000 },
+    11: { level: 11, name: "VIP 11", price: 860000 },
+    12: { level: 12, name: "VIP 12", price: 1000000 }
 };
 
 // =====================================
