@@ -1586,6 +1586,312 @@ app.get(
 );
 
 // =====================================
+// RELATIONSHIP CARDS
+// =====================================
+
+const RELATIONSHIP_CARDS = [
+    { id: "cp", name: "CP Card", emoji: "💑", price: 8000, frame: "CP_FRAME" },
+    { id: "best_friend", name: "Best Friend Card", emoji: "👫", price: 8000, frame: "BEST_FRIEND_FRAME" },
+    { id: "good_friend", name: "Good Friend Card", emoji: "🤝", price: 8000, frame: "GOOD_FRIEND_FRAME" },
+    { id: "game_friend", name: "Game Friend Card", emoji: "🎮", price: 8000, frame: "GAME_FRIEND_FRAME" }
+];
+
+// GET RELATIONSHIP CARDS
+app.get("/relationship/cards", authenticateUser, requireFirebase, (req, res) => {
+    res.json({ success: true, cards: RELATIONSHIP_CARDS });
+});
+
+// SEND RELATIONSHIP REQUEST
+app.post("/relationship/send", authenticateUser, requireFirebase, async (req, res) => {
+    try {
+        const senderUid = req.user.uid;
+        const { receiverUid, cardId } = req.body || {};
+        const card = RELATIONSHIP_CARDS.find(item => item.id === cardId);
+
+        if (!validUid(receiverUid) || !card) {
+            return sendError(res, 400, "Invalid relationship details.");
+        }
+
+        if (senderUid === receiverUid) {
+            return sendError(res, 400, "You cannot send a card to yourself.");
+        }
+
+        const senderRef = db.collection("users").doc(senderUid);
+        const receiverRef = db.collection("users").doc(receiverUid);
+        const walletRef = db.collection("wallets").doc(senderUid);
+        const requestRef = db.collection("relationship_requests").doc();
+
+        await db.runTransaction(async transaction => {
+            const [senderDoc, receiverDoc, walletDoc] = await Promise.all([
+                transaction.get(senderRef),
+                transaction.get(receiverRef),
+                transaction.get(walletRef)
+            ]);
+
+            if (!receiverDoc.exists) throw new Error("RECEIVER_NOT_FOUND");
+
+            const sender = senderDoc.exists ? senderDoc.data() : {};
+            const receiver = receiverDoc.data();
+            const wallet = walletDoc.exists ? walletDoc.data() : {};
+
+            if (
+                sender.relationshipStatus === "active" ||
+                receiver.relationshipStatus === "active"
+            ) {
+                throw new Error("ALREADY_IN_RELATIONSHIP");
+            }
+
+            const coins = Number(wallet.coins ?? sender.coins ?? 0);
+
+            if (!Number.isSafeInteger(coins) || coins < 8000) {
+                throw new Error("INSUFFICIENT_COINS");
+            }
+
+            transaction.set(walletRef, {
+                coins: coins - 8000,
+                updatedAt: dateValue()
+            }, { merge: true });
+
+            transaction.set(senderRef, {
+                coins: coins - 8000,
+                updatedAt: dateValue()
+            }, { merge: true });
+
+            transaction.set(requestRef, {
+                senderUid,
+                senderName: sender.name || sender.username || "User",
+                receiverUid,
+                receiverName: receiver.name || receiver.username || "User",
+                cardId: card.id,
+                cardName: card.name,
+                cardEmoji: card.emoji,
+                cardFrame: card.frame,
+                price: 8000,
+                status: "pending",
+                createdAt: dateValue()
+            });
+        });
+
+        res.json({
+            success: true,
+            message: "Relationship request sent.",
+            requestId: requestRef.id
+        });
+
+    } catch (error) {
+        console.error("Relationship send error:", error);
+
+        if (error.message === "RECEIVER_NOT_FOUND") {
+            return sendError(res, 404, "Receiver not found.");
+        }
+        if (error.message === "ALREADY_IN_RELATIONSHIP") {
+            return sendError(res, 400, "One user already has an active relationship.");
+        }
+        if (error.message === "INSUFFICIENT_COINS") {
+            return sendError(res, 400, "You need 8,000 coins.");
+        }
+
+        return sendError(res, 500, "Unable to send relationship request.");
+    }
+});
+
+// GET INCOMING AND OUTGOING REQUESTS
+app.get("/relationship/requests", authenticateUser, requireFirebase, async (req, res) => {
+    try {
+        const uid = req.user.uid;
+
+        const [incomingSnapshot, outgoingSnapshot] = await Promise.all([
+            db.collection("relationship_requests")
+                .where("receiverUid", "==", uid).limit(100).get(),
+            db.collection("relationship_requests")
+                .where("senderUid", "==", uid).limit(100).get()
+        ]);
+
+        res.json({
+            success: true,
+            incoming: incomingSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })),
+            outgoing: outgoingSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+        });
+
+    } catch (error) {
+        console.error("Relationship requests error:", error);
+        return sendError(res, 500, "Unable to load relationship requests.");
+    }
+});
+
+// ACCEPT OR REJECT REQUEST
+app.post("/relationship/:requestId/decision", authenticateUser, requireFirebase, async (req, res) => {
+    try {
+        const uid = req.user.uid;
+        const requestRef = db.collection("relationship_requests").doc(req.params.requestId);
+        const decision = req.body?.decision;
+
+        if (!["accept", "reject"].includes(decision)) {
+            return sendError(res, 400, "Decision must be accept or reject.");
+        }
+
+        await db.runTransaction(async transaction => {
+            const requestDoc = await transaction.get(requestRef);
+
+            if (!requestDoc.exists) throw new Error("REQUEST_NOT_FOUND");
+
+            const request = requestDoc.data();
+
+            if (request.receiverUid !== uid) throw new Error("NOT_RECEIVER");
+            if (request.status !== "pending") throw new Error("ALREADY_PROCESSED");
+
+            const senderRef = db.collection("users").doc(request.senderUid);
+            const receiverRef = db.collection("users").doc(uid);
+            const senderWalletRef = db.collection("wallets").doc(request.senderUid);
+            const receiverWalletRef = db.collection("wallets").doc(uid);
+
+            const [senderDoc, receiverDoc, senderWalletDoc, receiverWalletDoc] =
+                await Promise.all([
+                    transaction.get(senderRef),
+                    transaction.get(receiverRef),
+                    transaction.get(senderWalletRef),
+                    transaction.get(receiverWalletRef)
+                ]);
+
+            if (!senderDoc.exists || !receiverDoc.exists) {
+                throw new Error("USER_NOT_FOUND");
+            }
+
+            const sender = senderDoc.data();
+            const receiver = receiverDoc.data();
+            const senderWallet = senderWalletDoc.exists ? senderWalletDoc.data() : {};
+            const receiverWallet = receiverWalletDoc.exists ? receiverWalletDoc.data() : {};
+
+            if (decision === "accept") {
+                if (
+                    sender.relationshipStatus === "active" ||
+                    receiver.relationshipStatus === "active"
+                ) {
+                    throw new Error("ALREADY_IN_RELATIONSHIP");
+                }
+
+                const relationshipRef = db.collection("relationships").doc();
+                const relationshipSince = admin.firestore.Timestamp.now();
+
+                transaction.set(relationshipRef, {
+                    senderUid: request.senderUid,
+                    senderName: request.senderName,
+                    receiverUid: uid,
+                    receiverName: request.receiverName,
+                    cardId: request.cardId,
+                    cardName: request.cardName,
+                    cardFrame: request.cardFrame,
+                    status: "active",
+                    createdAt: dateValue()
+                });
+
+                transaction.set(senderRef, {
+                    relationshipId: relationshipRef.id,
+                    relationshipType: request.cardId,
+                    relationshipFrame: request.cardFrame,
+                    relationshipPartnerUid: uid,
+                    relationshipPartnerName: receiver.name || receiver.username || "User",
+                    relationshipStatus: "active",
+                    relationshipSince,
+                    updatedAt: dateValue()
+                }, { merge: true });
+
+                transaction.set(receiverRef, {
+                    relationshipId: relationshipRef.id,
+                    relationshipType: request.cardId,
+                    relationshipFrame: request.cardFrame,
+                    relationshipPartnerUid: request.senderUid,
+                    relationshipPartnerName: sender.name || sender.username || "User",
+                    relationshipStatus: "active",
+                    relationshipSince,
+                    updatedAt: dateValue()
+                }, { merge: true });
+
+                transaction.set(receiverWalletRef, {
+                    coins: Number(receiverWallet.coins ?? receiver.coins ?? 0) + 4000,
+                    updatedAt: dateValue()
+                }, { merge: true });
+
+                transaction.set(receiverRef, {
+                    coins: Number(receiverWallet.coins ?? receiver.coins ?? 0) + 4000
+                }, { merge: true });
+
+                transaction.update(requestRef, {
+                    status: "accepted",
+                    relationshipId: relationshipRef.id,
+                    decidedAt: dateValue()
+                });
+
+            } else {
+                const refund = Number(senderWallet.coins ?? sender.coins ?? 0) + 4000;
+
+                transaction.set(senderWalletRef, {
+                    coins: refund,
+                    updatedAt: dateValue()
+                }, { merge: true });
+
+                transaction.set(senderRef, {
+                    coins: refund,
+                    updatedAt: dateValue()
+                }, { merge: true });
+
+                transaction.update(requestRef, {
+                    status: "rejected",
+                    decidedAt: dateValue()
+                });
+            }
+        });
+
+        res.json({
+            success: true,
+            message: decision === "accept"
+                ? "Relationship accepted. Receiver received 4,000 coins."
+                : "Request rejected. Sender received 4,000 coins refund."
+        });
+
+    } catch (error) {
+        console.error("Relationship decision error:", error);
+
+        if (error.message === "REQUEST_NOT_FOUND") return sendError(res, 404, "Request not found.");
+        if (error.message === "NOT_RECEIVER") return sendError(res, 403, "Only receiver can decide.");
+        if (error.message === "ALREADY_PROCESSED") return sendError(res, 400, "Request already processed.");
+        if (error.message === "USER_NOT_FOUND") return sendError(res, 404, "User not found.");
+        if (error.message === "ALREADY_IN_RELATIONSHIP") return sendError(res, 400, "User already has an active relationship.");
+
+        return sendError(res, 500, "Unable to process relationship request.");
+    }
+});
+
+// GET MY ACTIVE RELATIONSHIP
+app.get("/relationship/my", authenticateUser, requireFirebase, async (req, res) => {
+    try {
+        const userDoc = await db.collection("users").doc(req.user.uid).get();
+        const user = userDoc.exists ? userDoc.data() : {};
+
+        res.json({
+            success: true,
+            relationship: user.relationshipStatus === "active" ? {
+                relationshipId: user.relationshipId || null,
+                relationshipType: user.relationshipType || null,
+                relationshipFrame: user.relationshipFrame || null,
+                relationshipPartnerUid: user.relationshipPartnerUid || null,
+                relationshipPartnerName: user.relationshipPartnerName || null,
+                relationshipSince: user.relationshipSince || null,
+                relationshipStatus: "active"
+            } : null
+        });
+
+    } catch (error) {
+        console.error("My relationship error:", error);
+        return sendError(res, 500, "Unable to load relationship.");
+    }
+});// =====================================
 // UNKNOWN ROUTE
 // =====================================
 
