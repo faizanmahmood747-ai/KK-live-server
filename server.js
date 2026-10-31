@@ -1,3 +1,4 @@
+
 import express from "express";
 import { AccessToken } from "livekit-server-sdk";
 import admin from "firebase-admin";
@@ -69,6 +70,17 @@ const RECHARGE_PACKAGES = {
     1000: 40000,
     2000: 80000,
     5000: 200000
+};
+
+// =====================================
+// VIP MEMBERSHIP PLANS
+// =====================================
+
+const VIP_PLANS = {
+    1: { level: 1, name: "VIP 1", price: 10000 },
+    2: { level: 2, name: "VIP 2", price: 40000 },
+    3: { level: 3, name: "VIP 3", price: 100000 },
+    4: { level: 4, name: "VIP 4", price: 160000 }
 };
 
 // =====================================
@@ -197,7 +209,6 @@ app.post(
                 );
             }
 
-            // Remove optional data URL prefix.
             const base64Data = file.replace(
                 /^data:image\/[a-zA-Z0-9.+-]+;base64,/,
                 ""
@@ -205,7 +216,6 @@ app.post(
 
             const imageBuffer = Buffer.from(base64Data, "base64");
 
-            // Keep image size below Vercel request limits.
             const MAX_IMAGE_SIZE = 3 * 1024 * 1024;
 
             if (
@@ -227,8 +237,15 @@ app.post(
                 fileName
             );
 
-            formData.append("fileName", `KKLive_${Date.now()}_${fileName}`);
-            formData.append("folder", "/KKLive/RechargeScreenshots");
+            formData.append(
+                "fileName",
+                `KKLive_${Date.now()}_${fileName}`
+            );
+
+            formData.append(
+                "folder",
+                "/KKLive/RechargeScreenshots"
+            );
 
             const credentials = Buffer.from(
                 `${IMAGEKIT_PRIVATE_KEY}:`
@@ -252,7 +269,10 @@ app.post(
             try {
                 imageKitData = JSON.parse(responseText);
             } catch {
-                console.error("ImageKit returned invalid response:", responseText);
+                console.error(
+                    "ImageKit returned invalid response:",
+                    responseText
+                );
 
                 return sendError(
                     res,
@@ -274,8 +294,6 @@ app.post(
             }
 
             if (!imageKitData.url) {
-                console.error("ImageKit URL missing:", imageKitData);
-
                 return sendError(
                     res,
                     502,
@@ -283,7 +301,10 @@ app.post(
                 );
             }
 
-            console.log("Recharge screenshot uploaded:", imageKitData.url);
+            console.log(
+                "Recharge screenshot uploaded:",
+                imageKitData.url
+            );
 
             return res.status(200).json({
                 success: true,
@@ -297,7 +318,8 @@ app.post(
 
             return res.status(500).json({
                 success: false,
-                message: error.message || "Screenshot upload failed."
+                message: error.message ||
+                    "Screenshot upload failed."
             });
         }
     }
@@ -352,7 +374,10 @@ app.get("/token", async (req, res) => {
 
         const { room, identity } = req.query;
 
-        if (!validText(room, 100) || !validText(identity, 150)) {
+        if (
+            !validText(room, 100) ||
+            !validText(identity, 150)
+        ) {
             return sendError(
                 res,
                 400,
@@ -390,9 +415,229 @@ app.get("/token", async (req, res) => {
     } catch (error) {
         console.error("LiveKit token error:", error);
 
-        return sendError(res, 500, "Unable to create LiveKit token.");
+        return sendError(
+            res,
+            500,
+            "Unable to create LiveKit token."
+        );
     }
 });
+
+// =====================================
+// VIP PLANS AND CURRENT MEMBERSHIP
+// =====================================
+
+app.get(
+    "/vip/plans",
+    authenticateUser,
+    requireFirebase,
+    async (req, res) => {
+        try {
+            const uid = req.user.uid;
+
+            const [userDoc, walletDoc] = await Promise.all([
+                db.collection("users").doc(uid).get(),
+                db.collection("wallets").doc(uid).get()
+            ]);
+
+            const userData = userDoc.exists
+                ? userDoc.data()
+                : {};
+
+            const walletData = walletDoc.exists
+                ? walletDoc.data()
+                : {};
+
+            const vipLevel = Math.max(
+                Number(userData.vipLevel || 0),
+                Number(walletData.vipLevel || 0)
+            );
+
+            res.json({
+                success: true,
+                plans: Object.values(VIP_PLANS),
+                vipLevel,
+                vipLifetime: Boolean(
+                    userData.vipLifetime ||
+                    walletData.vipLifetime
+                ),
+                coins: Number(
+                    walletData.coins ??
+                    userData.coins ??
+                    0
+                )
+            });
+
+        } catch (error) {
+            console.error("VIP plans error:", error);
+
+            return sendError(
+                res,
+                500,
+                "Unable to load VIP plans."
+            );
+        }
+    }
+);
+
+// =====================================
+// SECURE VIP PURCHASE
+// =====================================
+
+app.post(
+    "/vip/purchase",
+    authenticateUser,
+    requireFirebase,
+    async (req, res) => {
+        try {
+            const uid = req.user.uid;
+            const level = Number(req.body?.level);
+
+            if (
+                !Number.isInteger(level) ||
+                !VIP_PLANS[level]
+            ) {
+                return sendError(
+                    res,
+                    400,
+                    "Invalid VIP level."
+                );
+            }
+
+            const plan = VIP_PLANS[level];
+
+            const userRef = db.collection("users").doc(uid);
+            const walletRef = db.collection("wallets").doc(uid);
+            const logRef = db.collection("admin_logs").doc();
+
+            let updatedCoins = 0;
+
+            await db.runTransaction(async transaction => {
+
+                const [userDoc, walletDoc] = await Promise.all([
+                    transaction.get(userRef),
+                    transaction.get(walletRef)
+                ]);
+
+                const userData = userDoc.exists
+                    ? userDoc.data()
+                    : {};
+
+                const walletData = walletDoc.exists
+                    ? walletDoc.data()
+                    : {};
+
+                const currentVipLevel = Math.max(
+                    Number(userData.vipLevel || 0),
+                    Number(walletData.vipLevel || 0)
+                );
+
+                if (level <= currentVipLevel) {
+                    throw new Error("VIP_ALREADY_OWNED");
+                }
+
+                const currentCoins = Number(
+                    walletData.coins ??
+                    userData.coins ??
+                    0
+                );
+
+                if (
+                    !Number.isSafeInteger(currentCoins) ||
+                    currentCoins < 0
+                ) {
+                    throw new Error("INVALID_WALLET_BALANCE");
+                }
+
+                if (currentCoins < plan.price) {
+                    throw new Error("INSUFFICIENT_COINS");
+                }
+
+                updatedCoins = currentCoins - plan.price;
+
+                const vipData = {
+                    vipLevel: plan.level,
+                    vipName: plan.name,
+                    vipLifetime: true,
+                    vipPurchasePrice: plan.price,
+                    vipPurchasedAt: dateValue(),
+                    updatedAt: dateValue()
+                };
+
+                transaction.set(
+                    walletRef,
+                    {
+                        coins: updatedCoins,
+                        ...vipData
+                    },
+                    { merge: true }
+                );
+
+                transaction.set(
+                    userRef,
+                    {
+                        coins: updatedCoins,
+                        ...vipData
+                    },
+                    { merge: true }
+                );
+
+                transaction.set(logRef, {
+                    type: "vip_purchase",
+                    uid,
+                    vipLevel: plan.level,
+                    vipName: plan.name,
+                    coinsSpent: plan.price,
+                    createdAt: dateValue()
+                });
+            });
+
+            return res.json({
+                success: true,
+                message:
+                    `${plan.name} purchased successfully. Lifetime membership activated.`,
+                vipLevel: plan.level,
+                vipName: plan.name,
+                vipLifetime: true,
+                coinsSpent: plan.price,
+                coins: updatedCoins
+            });
+
+        } catch (error) {
+            console.error("VIP purchase error:", error);
+
+            if (error.message === "VIP_ALREADY_OWNED") {
+                return sendError(
+                    res,
+                    400,
+                    "You already own this VIP level or a higher level."
+                );
+            }
+
+            if (error.message === "INSUFFICIENT_COINS") {
+                return sendError(
+                    res,
+                    400,
+                    "Not enough coins to purchase this VIP level."
+                );
+            }
+
+            if (error.message === "INVALID_WALLET_BALANCE") {
+                return sendError(
+                    res,
+                    400,
+                    "Your wallet balance is invalid. Please contact support."
+                );
+            }
+
+            return sendError(
+                res,
+                500,
+                "Unable to purchase VIP."
+            );
+        }
+    }
+);
 
 // =====================================
 // GET WALLET
@@ -409,23 +654,45 @@ app.get(
             const userDoc = await db.collection("users").doc(uid).get();
             const walletDoc = await db.collection("wallets").doc(uid).get();
 
-            const userData = userDoc.exists ? userDoc.data() : {};
-            const walletData = walletDoc.exists ? walletDoc.data() : {};
+            const userData = userDoc.exists
+                ? userDoc.data()
+                : {};
+
+            const walletData = walletDoc.exists
+                ? walletDoc.data()
+                : {};
 
             res.json({
                 success: true,
-                coins: Number(walletData.coins ?? userData.coins ?? 0),
-                diamonds: Number(walletData.diamonds ?? userData.diamonds ?? 0),
+                coins: Number(
+                    walletData.coins ??
+                    userData.coins ??
+                    0
+                ),
+                diamonds: Number(
+                    walletData.diamonds ??
+                    userData.diamonds ??
+                    0
+                ),
                 giftCoinsReceived: Number(
                     walletData.giftCoinsReceived ??
                     userData.giftCoinsReceived ??
                     0
+                ),
+                vipLevel: Math.max(
+                    Number(userData.vipLevel || 0),
+                    Number(walletData.vipLevel || 0)
                 )
             });
 
         } catch (error) {
             console.error("Wallet error:", error);
-            return sendError(res, 500, "Unable to load wallet.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load wallet."
+            );
         }
     }
 );
@@ -456,17 +723,31 @@ app.post(
                 quantity < 1 ||
                 quantity > 100
             ) {
-                return sendError(res, 400, "Invalid gift details.");
+                return sendError(
+                    res,
+                    400,
+                    "Invalid gift details."
+                );
             }
 
-            const gift = GIFTS.find(item => item.id === giftId);
+            const gift = GIFTS.find(
+                item => item.id === giftId
+            );
 
             if (!gift) {
-                return sendError(res, 404, "Gift not found.");
+                return sendError(
+                    res,
+                    404,
+                    "Gift not found."
+                );
             }
 
             if (senderUid === hostUid) {
-                return sendError(res, 400, "You cannot send gifts to yourself.");
+                return sendError(
+                    res,
+                    400,
+                    "You cannot send gifts to yourself."
+                );
             }
 
             const totalCoins = gift.price * quantity;
@@ -475,6 +756,7 @@ app.post(
             const hostWallet = db.collection("wallets").doc(hostUid);
 
             await db.runTransaction(async transaction => {
+
                 const senderDoc = await transaction.get(senderWallet);
                 const hostDoc = await transaction.get(hostWallet);
 
@@ -486,7 +768,9 @@ app.post(
                     ? hostDoc.data()
                     : {};
 
-                const currentCoins = Number(senderData.coins || 0);
+                const currentCoins = Number(
+                    senderData.coins || 0
+                );
 
                 if (currentCoins < totalCoins) {
                     throw new Error("INSUFFICIENT_COINS");
@@ -500,7 +784,9 @@ app.post(
                     hostData.diamonds || 0
                 );
 
-                const earnedDiamonds = Math.floor(totalCoins * 0.30);
+                const earnedDiamonds = Math.floor(
+                    totalCoins * 0.30
+                );
 
                 transaction.set(
                     senderWallet,
@@ -514,8 +800,10 @@ app.post(
                 transaction.set(
                     hostWallet,
                     {
-                        giftCoinsReceived: currentGiftCoins + totalCoins,
-                        diamonds: currentDiamonds + earnedDiamonds,
+                        giftCoinsReceived:
+                            currentGiftCoins + totalCoins,
+                        diamonds:
+                            currentDiamonds + earnedDiamonds,
                         updatedAt: dateValue()
                     },
                     { merge: true }
@@ -541,17 +829,27 @@ app.post(
                 success: true,
                 message: "Gift sent successfully.",
                 coinsSpent: totalCoins,
-                diamondsEarned: Math.floor(totalCoins * 0.30)
+                diamondsEarned: Math.floor(
+                    totalCoins * 0.30
+                )
             });
 
         } catch (error) {
             console.error("Gift error:", error);
 
             if (error.message === "INSUFFICIENT_COINS") {
-                return sendError(res, 400, "Insufficient coins.");
+                return sendError(
+                    res,
+                    400,
+                    "Insufficient coins."
+                );
             }
 
-            return sendError(res, 500, "Unable to send gift.");
+            return sendError(
+                res,
+                500,
+                "Unable to send gift."
+            );
         }
     }
 );
@@ -578,45 +876,73 @@ app.post(
             const coins = RECHARGE_PACKAGES[Number(amount)];
 
             if (!coins) {
-                return sendError(res, 400, "Invalid recharge package.");
+                return sendError(
+                    res,
+                    400,
+                    "Invalid recharge package."
+                );
             }
 
             if (!validText(paymentMethod, 50)) {
-                return sendError(res, 400, "Payment method is required.");
+                return sendError(
+                    res,
+                    400,
+                    "Payment method is required."
+                );
             }
 
             if (!validText(transactionReference, 150)) {
-                return sendError(res, 400, "Transaction reference is required.");
+                return sendError(
+                    res,
+                    400,
+                    "Transaction reference is required."
+                );
             }
 
             if (
                 !validText(screenshotUrl, 1000) ||
-                !screenshotUrl.startsWith(IMAGEKIT_URL_ENDPOINT || "https://ik.imagekit.io/")
+                !screenshotUrl.startsWith(
+                    IMAGEKIT_URL_ENDPOINT ||
+                    "https://ik.imagekit.io/"
+                )
             ) {
-                return sendError(res, 400, "Valid ImageKit screenshot URL is required.");
+                return sendError(
+                    res,
+                    400,
+                    "Valid ImageKit screenshot URL is required."
+                );
             }
 
-            const requestRef = await db.collection("recharge_requests").add({
-                uid,
-                amount: Number(amount),
-                coins,
-                paymentMethod: paymentMethod.trim(),
-                transactionReference: transactionReference.trim(),
-                screenshotUrl,
-                status: "pending",
-                createdAt: dateValue()
-            });
+            const requestRef = await db
+                .collection("recharge_requests")
+                .add({
+                    uid,
+                    amount: Number(amount),
+                    coins,
+                    paymentMethod: paymentMethod.trim(),
+                    transactionReference:
+                        transactionReference.trim(),
+                    screenshotUrl,
+                    status: "pending",
+                    createdAt: dateValue()
+                });
 
             res.json({
                 success: true,
-                message: "Recharge request submitted. Waiting for admin approval.",
+                message:
+                    "Recharge request submitted. Waiting for admin approval.",
                 requestId: requestRef.id,
                 coins
             });
 
         } catch (error) {
             console.error("Recharge request error:", error);
-            return sendError(res, 500, "Unable to submit recharge request.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to submit recharge request."
+            );
         }
     }
 );
@@ -649,7 +975,12 @@ app.get(
 
         } catch (error) {
             console.error("My recharge requests error:", error);
-            return sendError(res, 500, "Unable to load recharge requests.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load recharge requests."
+            );
         }
     }
 );
@@ -678,19 +1009,27 @@ app.post(
                 !validText(accountTitle, 100) ||
                 !validText(accountNumber, 100)
             ) {
-                return sendError(res, 400, "Complete withdrawal details are required.");
+                return sendError(
+                    res,
+                    400,
+                    "Complete withdrawal details are required."
+                );
             }
 
             const walletRef = db.collection("wallets").doc(uid);
             const walletDoc = await walletRef.get();
 
-            const walletData = walletDoc.exists ? walletDoc.data() : {};
+            const walletData = walletDoc.exists
+                ? walletDoc.data()
+                : {};
 
             const giftCoinsReceived = Number(
                 walletData.giftCoinsReceived || 0
             );
 
-            const diamonds = Number(walletData.diamonds || 0);
+            const diamonds = Number(
+                walletData.diamonds || 0
+            );
 
             if (giftCoinsReceived < WITHDRAWAL_GIFT_COINS) {
                 return sendError(
@@ -708,17 +1047,19 @@ app.post(
                 );
             }
 
-            const requestRef = await db.collection("withdrawal_requests").add({
-                uid,
-                withdrawalMethod: withdrawalMethod.trim(),
-                accountTitle: accountTitle.trim(),
-                accountNumber: accountNumber.trim(),
-                bankName: bankName || "",
-                diamonds: WITHDRAWAL_DIAMONDS,
-                amount: WITHDRAWAL_AMOUNT,
-                status: "pending",
-                createdAt: dateValue()
-            });
+            const requestRef = await db
+                .collection("withdrawal_requests")
+                .add({
+                    uid,
+                    withdrawalMethod: withdrawalMethod.trim(),
+                    accountTitle: accountTitle.trim(),
+                    accountNumber: accountNumber.trim(),
+                    bankName: bankName || "",
+                    diamonds: WITHDRAWAL_DIAMONDS,
+                    amount: WITHDRAWAL_AMOUNT,
+                    status: "pending",
+                    createdAt: dateValue()
+                });
 
             res.json({
                 success: true,
@@ -728,7 +1069,12 @@ app.post(
 
         } catch (error) {
             console.error("Withdrawal request error:", error);
-            return sendError(res, 500, "Unable to submit withdrawal request.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to submit withdrawal request."
+            );
         }
     }
 );
@@ -761,7 +1107,12 @@ app.get(
 
         } catch (error) {
             console.error("My withdrawal requests error:", error);
-            return sendError(res, 500, "Unable to load withdrawal requests.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load withdrawal requests."
+            );
         }
     }
 );
@@ -799,7 +1150,12 @@ app.get(
 
         } catch (error) {
             console.error("Admin summary error:", error);
-            return sendError(res, 500, "Unable to load admin summary.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load admin summary."
+            );
         }
     }
 );
@@ -815,7 +1171,10 @@ app.get(
     adminOnly,
     async (req, res) => {
         try {
-            const snapshot = await db.collection("users").limit(200).get();
+            const snapshot = await db
+                .collection("users")
+                .limit(200)
+                .get();
 
             const users = snapshot.docs.map(doc => ({
                 uid: doc.id,
@@ -829,7 +1188,12 @@ app.get(
 
         } catch (error) {
             console.error("Admin users error:", error);
-            return sendError(res, 500, "Unable to load users.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load users."
+            );
         }
     }
 );
@@ -848,14 +1212,23 @@ app.post(
             const uid = req.params.uid;
             const coins = Number(req.body.coins);
 
-            if (!validUid(uid) || !Number.isSafeInteger(coins) || coins <= 0) {
-                return sendError(res, 400, "Invalid user or coin amount.");
+            if (
+                !validUid(uid) ||
+                !Number.isSafeInteger(coins) ||
+                coins <= 0
+            ) {
+                return sendError(
+                    res,
+                    400,
+                    "Invalid user or coin amount."
+                );
             }
 
             const walletRef = db.collection("wallets").doc(uid);
 
             await db.runTransaction(async transaction => {
                 const walletDoc = await transaction.get(walletRef);
+
                 const walletData = walletDoc.exists
                     ? walletDoc.data()
                     : {};
@@ -877,7 +1250,12 @@ app.post(
 
         } catch (error) {
             console.error("Admin add coins error:", error);
-            return sendError(res, 500, "Unable to add coins.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to add coins."
+            );
         }
     }
 );
@@ -910,7 +1288,12 @@ app.get(
 
         } catch (error) {
             console.error("Admin recharges error:", error);
-            return sendError(res, 500, "Unable to load recharge requests.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load recharge requests."
+            );
         }
     }
 );
@@ -930,10 +1313,16 @@ app.post(
             const decision = req.body.decision;
 
             if (!["approve", "reject"].includes(decision)) {
-                return sendError(res, 400, "Decision must be approve or reject.");
+                return sendError(
+                    res,
+                    400,
+                    "Decision must be approve or reject."
+                );
             }
 
-            const requestRef = db.collection("recharge_requests").doc(requestId);
+            const requestRef = db
+                .collection("recharge_requests")
+                .doc(requestId);
 
             await db.runTransaction(async transaction => {
                 const requestDoc = await transaction.get(requestRef);
@@ -949,7 +1338,10 @@ app.post(
                 }
 
                 if (decision === "approve") {
-                    const walletRef = db.collection("wallets").doc(requestData.uid);
+                    const walletRef = db
+                        .collection("wallets")
+                        .doc(requestData.uid);
+
                     const walletDoc = await transaction.get(walletRef);
 
                     const walletData = walletDoc.exists
@@ -969,7 +1361,10 @@ app.post(
                 }
 
                 transaction.update(requestRef, {
-                    status: decision === "approve" ? "approved" : "rejected",
+                    status:
+                        decision === "approve"
+                            ? "approved"
+                            : "rejected",
                     reviewedAt: dateValue(),
                     reviewedBy: req.user.uid
                 });
@@ -984,14 +1379,26 @@ app.post(
             console.error("Recharge decision error:", error);
 
             if (error.message === "REQUEST_NOT_FOUND") {
-                return sendError(res, 404, "Recharge request not found.");
+                return sendError(
+                    res,
+                    404,
+                    "Recharge request not found."
+                );
             }
 
             if (error.message === "REQUEST_ALREADY_PROCESSED") {
-                return sendError(res, 400, "This request has already been processed.");
+                return sendError(
+                    res,
+                    400,
+                    "This request has already been processed."
+                );
             }
 
-            return sendError(res, 500, "Unable to process recharge request.");
+            return sendError(
+                res,
+                500,
+                "Unable to process recharge request."
+            );
         }
     }
 );
@@ -1024,7 +1431,12 @@ app.get(
 
         } catch (error) {
             console.error("Admin withdrawals error:", error);
-            return sendError(res, 500, "Unable to load withdrawal requests.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load withdrawal requests."
+            );
         }
     }
 );
@@ -1044,10 +1456,16 @@ app.post(
             const decision = req.body.decision;
 
             if (!["approve", "reject"].includes(decision)) {
-                return sendError(res, 400, "Decision must be approve or reject.");
+                return sendError(
+                    res,
+                    400,
+                    "Decision must be approve or reject."
+                );
             }
 
-            const requestRef = db.collection("withdrawal_requests").doc(requestId);
+            const requestRef = db
+                .collection("withdrawal_requests")
+                .doc(requestId);
 
             await db.runTransaction(async transaction => {
                 const requestDoc = await transaction.get(requestRef);
@@ -1063,7 +1481,10 @@ app.post(
                 }
 
                 transaction.update(requestRef, {
-                    status: decision === "approve" ? "approved" : "rejected",
+                    status:
+                        decision === "approve"
+                            ? "approved"
+                            : "rejected",
                     reviewedAt: dateValue(),
                     reviewedBy: req.user.uid
                 });
@@ -1078,14 +1499,26 @@ app.post(
             console.error("Withdrawal decision error:", error);
 
             if (error.message === "REQUEST_NOT_FOUND") {
-                return sendError(res, 404, "Withdrawal request not found.");
+                return sendError(
+                    res,
+                    404,
+                    "Withdrawal request not found."
+                );
             }
 
             if (error.message === "REQUEST_ALREADY_PROCESSED") {
-                return sendError(res, 400, "This request has already been processed.");
+                return sendError(
+                    res,
+                    400,
+                    "This request has already been processed."
+                );
             }
 
-            return sendError(res, 500, "Unable to process withdrawal request.");
+            return sendError(
+                res,
+                500,
+                "Unable to process withdrawal request."
+            );
         }
     }
 );
@@ -1118,7 +1551,12 @@ app.get(
 
         } catch (error) {
             console.error("Admin live sessions error:", error);
-            return sendError(res, 500, "Unable to load live sessions.");
+
+            return sendError(
+                res,
+                500,
+                "Unable to load live sessions."
+            );
         }
     }
 );
@@ -1160,7 +1598,8 @@ app.use((error, req, res, next) => {
 
     res.status(error.status || 500).json({
         success: false,
-        message: error.message || "Internal server error."
+        message: error.message ||
+            "Internal server error."
     });
 });
 
