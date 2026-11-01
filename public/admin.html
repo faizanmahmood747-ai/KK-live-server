@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -201,6 +200,8 @@
       grid-column: 1 / -1;
     }
 
+    td button { width:auto; min-width:76px; padding:8px 10px; margin:3px; font-size:12px; }
+
     footer {
       text-align: center;
       padding: 25px;
@@ -296,6 +297,8 @@
         <div id="globalMessage" class="message"></div>
       </section>
 
+      <p class="muted">Wallet totals display only when the server provides aggregate totals. User balances are shown in the Users list when returned by the API.</p>
+
       <div class="stats">
         <div class="stat">
           <div class="stat-label">Total Users</div>
@@ -321,16 +324,19 @@
       <div class="tabs">
         <button class="active" data-section="usersSection">👥 Users</button>
         <button data-section="coinsSection">🪙 Add Coins</button>
+        <button data-section="rechargesSection">💳 Recharges</button>
+        <button data-section="withdrawalsSection">💸 Withdrawals</button>
         <button data-section="liveSection">🔴 Live Sessions</button>
-        <button data-section="giftsSection">🎁 Gifts</button>
+        <button data-section="giftsSection">🎁 Gift Catalog</button>
       </div>
 
       <section id="usersSection" class="section active panel">
         <h2>👥 Users</h2>
 
-        <button id="refreshUsersBtn" style="width:auto;">
-          Refresh Users
-        </button>
+        <div class="coin-form">
+          <input id="userSearch" type="search" placeholder="Search by name, email or Firebase UID">
+          <button id="refreshUsersBtn" type="button">Refresh Users</button>
+        </div>
 
         <div class="table-wrap">
           <table>
@@ -383,6 +389,20 @@
         <p class="muted">
           Maximum: 1,000,000 coins per request. Confirm the UID carefully.
         </p>
+      </section>
+
+      <section id="rechargesSection" class="section panel">
+        <h2>💳 Recharge Requests</h2>
+        <button id="refreshRechargesBtn" type="button" style="width:auto;">Refresh Requests</button>
+        <div class="table-wrap"><table><thead><tr><th>User UID</th><th>Coins</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="rechargesTable"><tr><td colspan="4">No data loaded.</td></tr></tbody></table></div>
+      </section>
+
+      <section id="withdrawalsSection" class="section panel">
+        <h2>💸 Withdrawal Requests</h2>
+        <button id="refreshWithdrawalsBtn" type="button" style="width:auto;">Refresh Requests</button>
+        <div class="table-wrap"><table><thead><tr><th>User UID</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="withdrawalsTable"><tr><td colspan="4">No data loaded.</td></tr></tbody></table></div>
       </section>
 
       <section id="liveSection" class="section panel">
@@ -573,7 +593,9 @@
           loadSummary(),
           loadUsers(),
           loadLiveSessions(),
-          loadGifts()
+          loadGifts(),
+          loadDecisionList("recharges"),
+          loadDecisionList("withdrawals")
         ]);
       }
     });
@@ -602,10 +624,10 @@
           formatNumber(summary.totalUsers);
 
         $("totalCoins").textContent =
-          formatNumber(summary.totalCoins);
+          summary.totalCoins == null ? "Not available" : formatNumber(summary.totalCoins);
 
         $("totalDiamonds").textContent =
-          formatNumber(summary.totalDiamonds);
+          summary.totalDiamonds == null ? "Not available" : formatNumber(summary.totalDiamonds);
 
         $("totalLive").textContent =
           formatNumber(summary.totalLiveSessions);
@@ -616,6 +638,24 @@
       }
     }
 
+    let cachedUsers = [];
+
+    function renderUsers(users) {
+      if (!users.length) {
+        $("usersTable").innerHTML = '<tr><td colspan="4">No matching users found.</td></tr>';
+        return;
+      }
+      $("usersTable").innerHTML = users.map((user) => {
+        const uid = user.uid || user.id || "";
+        return `<tr><td>${escapeHtml(user.name || user.displayName || user.email || "User")}<br><span class="muted">${escapeHtml(user.email || "")}</span></td><td>${escapeHtml(uid)}</td><td>${formatNumber(user.coins)}</td><td>${formatNumber(user.diamonds)}</td></tr>`;
+      }).join("");
+    }
+
+    $("userSearch").addEventListener("input", () => {
+      const q = $("userSearch").value.trim().toLowerCase();
+      renderUsers(cachedUsers.filter(user => [user.name, user.displayName, user.email, user.uid, user.id].some(value => String(value || "").toLowerCase().includes(q))));
+    });
+
     async function loadUsers() {
       $("usersTable").innerHTML =
         '<tr><td colspan="4">Loading users...</td></tr>';
@@ -624,24 +664,8 @@
         const data = await api("/admin/users");
         const users = Array.isArray(data) ? data : (data.users || []);
 
-        if (!users.length) {
-          $("usersTable").innerHTML =
-            '<tr><td colspan="4">No users found.</td></tr>';
-          return;
-        }
-
-        $("usersTable").innerHTML = users.map((user) => {
-          const uid = user.uid || user.id || "";
-
-          return `
-            <tr>
-              <td>${escapeHtml(user.name || user.displayName || user.email || "User")}</td>
-              <td>${escapeHtml(uid)}</td>
-              <td>${formatNumber(user.coins)}</td>
-              <td>${formatNumber(user.diamonds)}</td>
-            </tr>
-          `;
-        }).join("");
+        cachedUsers = users;
+        renderUsers(users);
       } catch (error) {
         $("usersTable").innerHTML =
           `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
@@ -731,6 +755,42 @@
       }
     }
 
+    async function loadDecisionList(kind) {
+      const isRecharge = kind === "recharges";
+      const tableId = isRecharge ? "rechargesTable" : "withdrawalsTable";
+      const endpoint = isRecharge ? "/admin/recharges" : "/admin/withdrawals";
+      const collection = isRecharge ? "requests" : "requests";
+      $(tableId).innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+      try {
+        const data = await api(endpoint);
+        const items = data[collection] || [];
+        if (!items.length) { $(tableId).innerHTML = '<tr><td colspan="4">No requests found.</td></tr>'; return; }
+        $(tableId).innerHTML = items.map(item => {
+          const status = String(item.status || "pending");
+          const amount = isRecharge ? (item.coins ?? item.amount ?? 0) : (item.amount ?? item.coins ?? 0);
+          const actions = status === "pending" ? `<button type="button" data-decision="approve" data-kind="${kind}" data-id="${escapeHtml(item.id)}">Approve</button><button type="button" class="danger" data-decision="reject" data-kind="${kind}" data-id="${escapeHtml(item.id)}">Reject</button>` : "—";
+          return `<tr><td>${escapeHtml(item.uid || item.userUid || "—")}</td><td>${formatNumber(amount)}</td><td>${escapeHtml(status)}</td><td>${actions}</td></tr>`;
+        }).join("");
+      } catch(error) { $(tableId).innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`; }
+    }
+
+    document.addEventListener("click", async event => {
+      const button = event.target.closest("button[data-decision]");
+      if (!button) return;
+      const { decision, kind, id } = button.dataset;
+      if (!confirm(`${decision.toUpperCase()} this ${kind} request?`)) return;
+      button.disabled = true;
+      try {
+        const data = await api(`/admin/${kind}/${encodeURIComponent(id)}/decision`, { method: "POST", body: JSON.stringify({ decision }) });
+        showMessage("globalMessage", data.message || "Request updated.", true);
+        await loadDecisionList(kind);
+        await loadSummary();
+      } catch(error) { alert(error.message); button.disabled = false; }
+    });
+
+    $("refreshRechargesBtn").addEventListener("click", () => loadDecisionList("recharges"));
+    $("refreshWithdrawalsBtn").addEventListener("click", () => loadDecisionList("withdrawals"));
+
     $("refreshLiveBtn").addEventListener("click", loadLiveSessions);
 
     async function loadGifts() {
@@ -765,4 +825,3 @@
   </script>
 </body>
 </html>
-```
