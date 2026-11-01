@@ -7,9 +7,7 @@
   <title>K.K LIVE | Admin Panel</title>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -36,9 +34,7 @@
       color: #a78bfa;
     }
 
-    .logo span {
-      color: white;
-    }
+    .logo span { color: white; }
 
     .subtitle {
       color: #aab4d0;
@@ -54,10 +50,7 @@
       margin: 22px 0;
     }
 
-    h2 {
-      margin-top: 0;
-      font-size: 20px;
-    }
+    h2 { margin-top: 0; font-size: 20px; }
 
     .login-box {
       max-width: 430px;
@@ -82,17 +75,10 @@
       font-weight: bold;
     }
 
-    button:hover {
-      background: #6d28d9;
-    }
-
-    button.secondary {
-      background: #263450;
-    }
-
-    button.danger {
-      background: #b91c1c;
-    }
+    button:hover { background: #6d28d9; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    button.secondary { background: #263450; }
+    button.danger { background: #b91c1c; }
 
     .message {
       font-size: 13px;
@@ -101,18 +87,9 @@
       margin-top: 12px;
     }
 
-    .success {
-      color: #86efac;
-    }
-
-    .muted {
-      color: #aab4d0;
-      font-size: 13px;
-    }
-
-    .hidden {
-      display: none !important;
-    }
+    .success { color: #86efac; }
+    .muted { color: #aab4d0; font-size: 13px; }
+    .hidden { display: none !important; }
 
     .stats {
       display: grid;
@@ -128,10 +105,7 @@
       padding: 19px;
     }
 
-    .stat-label {
-      color: #aab4d0;
-      font-size: 13px;
-    }
+    .stat-label { color: #aab4d0; font-size: 13px; }
 
     .stat-number {
       font-size: 27px;
@@ -148,28 +122,17 @@
       margin: 20px 0;
     }
 
-    .tabs button {
-      width: auto;
-      padding: 11px 15px;
-    }
+    .tabs button { width: auto; padding: 11px 15px; }
 
     .tabs button.active {
       background: #a78bfa;
       color: #160c2c;
     }
 
-    .section {
-      display: none;
-    }
+    .section { display: none; }
+    .section.active { display: block; }
 
-    .section.active {
-      display: block;
-    }
-
-    .table-wrap {
-      width: 100%;
-      overflow-x: auto;
-    }
+    .table-wrap { width: 100%; overflow-x: auto; }
 
     table {
       width: 100%;
@@ -185,10 +148,7 @@
       overflow-wrap: anywhere;
     }
 
-    th {
-      background: #11182b;
-      color: #c4b5fd;
-    }
+    th { background: #11182b; color: #c4b5fd; }
 
     .coin-form {
       display: grid;
@@ -196,11 +156,15 @@
       gap: 10px;
     }
 
-    .coin-form button {
-      grid-column: 1 / -1;
-    }
+    .coin-form button { grid-column: 1 / -1; }
 
-    td button { width:auto; min-width:76px; padding:8px 10px; margin:3px; font-size:12px; }
+    td button {
+      width: auto;
+      min-width: 76px;
+      padding: 8px 10px;
+      margin: 3px;
+      font-size: 12px;
+    }
 
     footer {
       text-align: center;
@@ -210,618 +174,684 @@
     }
 
     @media (max-width: 750px) {
-      .stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 450px) {
-      .stats {
-        gap: 8px;
-      }
-
-      .stat {
-        padding: 12px;
-      }
-
-      .stat-number {
-        font-size: 21px;
-      }
-
-      .panel {
-        padding: 14px;
-      }
-
-      .coin-form {
-        grid-template-columns: 1fr;
-      }
-
-      .coin-form button {
-        grid-column: auto;
-      }
+      .stats { gap: 8px; }
+      .stat { padding: 12px; }
+      .stat-number { font-size: 21px; }
+      .panel { padding: 14px; }
+      .coin-form { grid-template-columns: 1fr; }
+      .coin-form button { grid-column: auto; }
     }
   </style>
 </head>
 
 <body>
-  <header>
-    <div class="container">
-      <div class="logo">K.K <span>LIVE</span></div>
-      <div class="subtitle">ADMIN CONTROL PANEL</div>
+<header>
+  <div class="container">
+    <div class="logo">K.K <span>LIVE</span></div>
+    <div class="subtitle">ADMIN CONTROL PANEL</div>
+  </div>
+</header>
+
+<main class="container">
+
+  <section id="loginPanel" class="panel login-box">
+    <h2>🔐 Admin Login</h2>
+    <p class="muted">Login with your authorized Firebase account.</p>
+
+    <form id="loginForm">
+      <input id="email" type="email" placeholder="Admin Email"
+             autocomplete="username" required>
+
+      <input id="password" type="password" placeholder="Password"
+             autocomplete="current-password" required>
+
+      <button type="submit">Login to Admin Panel</button>
+    </form>
+
+    <div id="loginMessage" class="message"></div>
+  </section>
+
+  <section id="dashboard" class="hidden">
+
+    <section class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h2 style="margin-bottom:6px;">📊 Dashboard</h2>
+          <div id="adminEmail" class="muted"></div>
+        </div>
+        <button id="logoutBtn" class="danger" style="width:auto;">Logout</button>
+      </div>
+      <div id="globalMessage" class="message"></div>
+    </section>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Total Users</div>
+        <div id="totalUsers" class="stat-number">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Total Coins</div>
+        <div id="totalCoins" class="stat-number">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Total Diamonds</div>
+        <div id="totalDiamonds" class="stat-number">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Live Sessions</div>
+        <div id="totalLive" class="stat-number">—</div>
+      </div>
     </div>
-  </header>
 
-  <main class="container">
+    <div class="tabs">
+      <button class="active" data-section="usersSection">👥 Users</button>
+      <button data-section="coinsSection">🪙 Add Coins</button>
+      <button data-section="rechargesSection">💳 Recharges</button>
+      <button data-section="withdrawalsSection">💸 Withdrawals</button>
+      <button data-section="liveSection">🔴 Live Sessions</button>
+      <button data-section="giftsSection">🎁 Gift History</button>
+    </div>
 
-    <section id="loginPanel" class="panel login-box">
-      <h2>🔐 Admin Login</h2>
-      <p class="muted">Login with your authorized Firebase account.</p>
+    <section id="usersSection" class="section active panel">
+      <h2>👥 Users</h2>
+      <div class="coin-form">
+        <input id="userSearch" type="search"
+               placeholder="Search by name, email or Firebase UID">
+        <button id="refreshUsersBtn" type="button">Refresh Users</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Firebase UID</th>
+              <th>Coins</th><th>Diamonds</th>
+            </tr>
+          </thead>
+          <tbody id="usersTable">
+            <tr><td colspan="4">Login to load users.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-      <form id="loginForm">
-        <input
-          id="email"
-          type="email"
-          placeholder="Admin Email"
-          autocomplete="username"
-          required
-        >
-
-        <input
-          id="password"
-          type="password"
-          placeholder="Password"
-          autocomplete="current-password"
-          required
-        >
-
-        <button type="submit">Login to Admin Panel</button>
+    <section id="coinsSection" class="section panel">
+      <h2>🪙 Add Coins</h2>
+      <p class="muted">Enter the exact Firebase UID and coin amount.</p>
+      <form id="coinsForm" class="coin-form">
+        <input id="targetUid" type="text" placeholder="User Firebase UID" required>
+        <input id="coinAmount" type="number" min="1" max="1000000"
+               step="1" placeholder="Coin Amount" required>
+        <button type="submit">Add Coins</button>
       </form>
-
-      <div id="loginMessage" class="message"></div>
+      <div id="coinsMessage" class="message"></div>
+      <p class="muted">Maximum: 1,000,000 coins per request.</p>
     </section>
 
-    <section id="dashboard" class="hidden">
-
-      <section class="panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-          <div>
-            <h2 style="margin-bottom:6px;">📊 Dashboard</h2>
-            <div id="adminEmail" class="muted"></div>
-          </div>
-
-          <button id="logoutBtn" class="danger" style="width:auto;">
-            Logout
-          </button>
-        </div>
-
-        <div id="globalMessage" class="message"></div>
-      </section>
-
-      <p class="muted">Wallet totals display only when the server provides aggregate totals. User balances are shown in the Users list when returned by the API.</p>
-
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-label">Total Users</div>
-          <div id="totalUsers" class="stat-number">—</div>
-        </div>
-
-        <div class="stat">
-          <div class="stat-label">Total Coins</div>
-          <div id="totalCoins" class="stat-number">—</div>
-        </div>
-
-        <div class="stat">
-          <div class="stat-label">Total Diamonds</div>
-          <div id="totalDiamonds" class="stat-number">—</div>
-        </div>
-
-        <div class="stat">
-          <div class="stat-label">Live Sessions</div>
-          <div id="totalLive" class="stat-number">—</div>
-        </div>
+    <section id="rechargesSection" class="section panel">
+      <h2>💳 Recharge Requests</h2>
+      <button id="refreshRechargesBtn" type="button" style="width:auto;">
+        Refresh Requests
+      </button>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>User UID</th><th>Coins</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="rechargesTable">
+            <tr><td colspan="4">No data loaded.</td></tr>
+          </tbody>
+        </table>
       </div>
-
-      <div class="tabs">
-        <button class="active" data-section="usersSection">👥 Users</button>
-        <button data-section="coinsSection">🪙 Add Coins</button>
-        <button data-section="rechargesSection">💳 Recharges</button>
-        <button data-section="withdrawalsSection">💸 Withdrawals</button>
-        <button data-section="liveSection">🔴 Live Sessions</button>
-        <button data-section="giftsSection">🎁 Gift Catalog</button>
-      </div>
-
-      <section id="usersSection" class="section active panel">
-        <h2>👥 Users</h2>
-
-        <div class="coin-form">
-          <input id="userSearch" type="search" placeholder="Search by name, email or Firebase UID">
-          <button id="refreshUsersBtn" type="button">Refresh Users</button>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Firebase UID</th>
-                <th>Coins</th>
-                <th>Diamonds</th>
-              </tr>
-            </thead>
-
-            <tbody id="usersTable">
-              <tr><td colspan="4">Login to load users.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="coinsSection" class="section panel">
-        <h2>🪙 Add Coins</h2>
-
-        <p class="muted">
-          Enter the exact Firebase UID of the user and the number of coins.
-        </p>
-
-        <form id="coinsForm" class="coin-form">
-          <input
-            id="targetUid"
-            type="text"
-            placeholder="User Firebase UID"
-            required
-          >
-
-          <input
-            id="coinAmount"
-            type="number"
-            min="1"
-            max="1000000"
-            step="1"
-            placeholder="Coin Amount"
-            required
-          >
-
-          <button type="submit">Add Coins</button>
-        </form>
-
-        <div id="coinsMessage" class="message"></div>
-
-        <p class="muted">
-          Maximum: 1,000,000 coins per request. Confirm the UID carefully.
-        </p>
-      </section>
-
-      <section id="rechargesSection" class="section panel">
-        <h2>💳 Recharge Requests</h2>
-        <button id="refreshRechargesBtn" type="button" style="width:auto;">Refresh Requests</button>
-        <div class="table-wrap"><table><thead><tr><th>User UID</th><th>Coins</th><th>Status</th><th>Action</th></tr></thead>
-        <tbody id="rechargesTable"><tr><td colspan="4">No data loaded.</td></tr></tbody></table></div>
-      </section>
-
-      <section id="withdrawalsSection" class="section panel">
-        <h2>💸 Withdrawal Requests</h2>
-        <button id="refreshWithdrawalsBtn" type="button" style="width:auto;">Refresh Requests</button>
-        <div class="table-wrap"><table><thead><tr><th>User UID</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
-        <tbody id="withdrawalsTable"><tr><td colspan="4">No data loaded.</td></tr></tbody></table></div>
-      </section>
-
-      <section id="liveSection" class="section panel">
-        <h2>🔴 Live Sessions</h2>
-
-        <button id="refreshLiveBtn" style="width:auto;">
-          Refresh Live Sessions
-        </button>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Host</th>
-                <th>Room Name</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-
-            <tbody id="liveTable">
-              <tr><td colspan="3">No data loaded.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="giftsSection" class="section panel">
-        <h2>🎁 Gift History</h2>
-
-        <button id="refreshGiftsBtn" style="width:auto;">
-          Refresh Gifts
-        </button>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Gift</th>
-                <th>Sender</th>
-                <th>Receiver</th>
-                <th>Price</th>
-              </tr>
-            </thead>
-
-            <tbody id="giftsTable">
-              <tr><td colspan="4">No data loaded.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
     </section>
-  </main>
 
-  <footer>K.K LIVE © Admin Panel</footer>
+    <section id="withdrawalsSection" class="section panel">
+      <h2>💸 Withdrawal Requests</h2>
+      <button id="refreshWithdrawalsBtn" type="button" style="width:auto;">
+        Refresh Requests
+      </button>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>User UID</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="withdrawalsTable">
+            <tr><td colspan="4">No data loaded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-  <script type="module">
-    import { initializeApp } from
-      "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    <section id="liveSection" class="section panel">
+      <h2>🔴 Live Sessions</h2>
+      <button id="refreshLiveBtn" type="button" style="width:auto;">
+        Refresh Live Sessions
+      </button>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Host</th><th>Room Name</th><th>Status</th></tr></thead>
+          <tbody id="liveTable">
+            <tr><td colspan="3">No data loaded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-    import {
-      getAuth,
-      signInWithEmailAndPassword,
-      onAuthStateChanged,
-      signOut
-    } from
-      "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    <section id="giftsSection" class="section panel">
+      <h2>🎁 Gift History</h2>
+      <button id="refreshGiftsBtn" type="button" style="width:auto;">
+        Refresh Gifts
+      </button>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Gift</th><th>Sender</th><th>Receiver</th><th>Price</th></tr></thead>
+          <tbody id="giftsTable">
+            <tr><td colspan="4">No data loaded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-    /*
-      Firebase Web App configuration.
-      This is public web configuration, not a service-account private key.
-    */
-    const firebaseConfig = {
-      apiKey: "AIzaSyDC4AaIR_BRCn_ioVdXv5GZa1mnuymHPmg",
-      authDomain: "chingo-live.firebaseapp.com",
-      projectId: "chingo-live",
-      appId: "1:334013160718:web:ffe2f568b3f15b2bbd4b5f",
-      storageBucket: "chingo-live.firebasestorage.app",
-      messagingSenderId: "334013160718"
-    };
+  </section>
+</main>
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
+<footer>K.K LIVE © Admin Panel</footer>
+<script type="module">
+  import { initializeApp } from
+    "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 
-    const API_BASE = window.location.origin;
+  import {
+    getAuth,
+    signInWithEmailAndPassword,
+    onAuthStateChanged,
+    signOut
+  } from
+    "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
-    const $ = (id) => document.getElementById(id);
+  const firebaseConfig = {
+    apiKey: "AIzaSyDC4AaIR_BRCn_ioVdXv5GZa1mnuymHPmg",
+    authDomain: "chingo-live.firebaseapp.com",
+    projectId: "chingo-live",
+    appId: "1:334013160718:web:ffe2f568b3f15b2bbd4b5f",
+    storageBucket: "chingo-live.firebasestorage.app",
+    messagingSenderId: "334013160718"
+  };
 
-    function showMessage(id, message, success = false) {
-      const element = $(id);
-      element.textContent = message;
-      element.className = success ? "message success" : "message";
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  const API_BASE = window.location.origin;
+  const $ = (id) => document.getElementById(id);
+
+  function showMessage(id, message, success = false) {
+    const element = $(id);
+    element.textContent = message;
+    element.className = success ? "message success" : "message";
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, character => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[character]));
+  }
+
+  function formatNumber(value) {
+    const number = Number(value ?? 0);
+    return Number.isFinite(number) ? number.toLocaleString() : "0";
+  }
+
+  async function api(path, options = {}) {
+    if (!auth.currentUser) {
+      throw new Error("Please log in first.");
     }
 
-    function escapeHtml(value) {
-      return String(value ?? "").replace(/[&<>"']/g, (character) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      }[character]));
-    }
+    const token = await auth.currentUser.getIdToken();
 
-    function formatNumber(value) {
-      const number = Number(value ?? 0);
-      return Number.isFinite(number) ? number.toLocaleString() : "0";
-    }
-
-    async function api(path, options = {}) {
-      if (!auth.currentUser) {
-        throw new Error("Please log in first.");
-      }
-
-      const token = await auth.currentUser.getIdToken();
-
-      const response = await fetch(API_BASE + path, {
-        ...options,
-        headers: {
-          "Authorization": "Bearer " + token,
-          "Content-Type": "application/json",
-          ...(options.headers || {})
-        }
-      });
-
-      const responseText = await response.text();
-      let data;
-
-      try {
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch {
-        throw new Error(
-          "Unexpected server response. Please check the Vercel deployment."
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || data.message || "Request failed: " + response.status
-        );
-      }
-
-      return data;
-    }
-
-    function setLoggedIn(isLoggedIn) {
-      $("loginPanel").classList.toggle("hidden", isLoggedIn);
-      $("dashboard").classList.toggle("hidden", !isLoggedIn);
-
-      if (isLoggedIn && auth.currentUser) {
-        $("adminEmail").textContent = auth.currentUser.email || "Admin";
-      }
-    }
-
-    $("loginForm").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      showMessage("loginMessage", "Signing in...");
-
-      try {
-        await signInWithEmailAndPassword(
-          auth,
-          $("email").value.trim(),
-          $("password").value
-        );
-
-        showMessage("loginMessage", "");
-      } catch (error) {
-        showMessage(
-          "loginMessage",
-          error.message || "Unable to log in."
-        );
+    const response = await fetch(API_BASE + path, {
+      ...options,
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json",
+        ...(options.headers || {})
       }
     });
 
-    $("logoutBtn").addEventListener("click", async () => {
-      try {
-        await signOut(auth);
-      } catch (error) {
-        showMessage("globalMessage", error.message);
-      }
-    });
+    const responseText = await response.text();
+    let data;
 
-    onAuthStateChanged(auth, async (user) => {
-      setLoggedIn(Boolean(user));
-
-      if (user) {
-        await Promise.all([
-          loadSummary(),
-          loadUsers(),
-          loadLiveSessions(),
-          loadGifts(),
-          loadDecisionList("recharges"),
-          loadDecisionList("withdrawals")
-        ]);
-      }
-    });
-
-    document.querySelectorAll(".tabs button").forEach((button) => {
-      button.addEventListener("click", () => {
-        document.querySelectorAll(".tabs button").forEach((item) => {
-          item.classList.remove("active");
-        });
-
-        document.querySelectorAll(".section").forEach((section) => {
-          section.classList.remove("active");
-        });
-
-        button.classList.add("active");
-        $(button.dataset.section).classList.add("active");
-      });
-    });
-
-    async function loadSummary() {
-      try {
-        const data = await api("/admin/summary");
-        const summary = data.summary || data;
-
-        $("totalUsers").textContent =
-          formatNumber(summary.totalUsers);
-
-        $("totalCoins").textContent =
-          summary.totalCoins == null ? "Not available" : formatNumber(summary.totalCoins);
-
-        $("totalDiamonds").textContent =
-          summary.totalDiamonds == null ? "Not available" : formatNumber(summary.totalDiamonds);
-
-        $("totalLive").textContent =
-          formatNumber(summary.totalLiveSessions);
-
-        showMessage("globalMessage", "");
-      } catch (error) {
-        showMessage("globalMessage", "Dashboard: " + error.message);
-      }
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      throw new Error("Unexpected server response. Check Vercel deployment.");
     }
 
-    let cachedUsers = [];
-
-    function renderUsers(users) {
-      if (!users.length) {
-        $("usersTable").innerHTML = '<tr><td colspan="4">No matching users found.</td></tr>';
-        return;
-      }
-      $("usersTable").innerHTML = users.map((user) => {
-        const uid = user.uid || user.id || "";
-        return `<tr><td>${escapeHtml(user.name || user.displayName || user.email || "User")}<br><span class="muted">${escapeHtml(user.email || "")}</span></td><td>${escapeHtml(uid)}</td><td>${formatNumber(user.coins)}</td><td>${formatNumber(user.diamonds)}</td></tr>`;
-      }).join("");
+    if (!response.ok) {
+      throw new Error(
+        data.error || data.message || "Request failed: " + response.status
+      );
     }
 
-    $("userSearch").addEventListener("input", () => {
-      const q = $("userSearch").value.trim().toLowerCase();
-      renderUsers(cachedUsers.filter(user => [user.name, user.displayName, user.email, user.uid, user.id].some(value => String(value || "").toLowerCase().includes(q))));
-    });
+    return data;
+  }
 
-    async function loadUsers() {
-      $("usersTable").innerHTML =
-        '<tr><td colspan="4">Loading users...</td></tr>';
+  function setLoggedIn(isLoggedIn) {
+    $("loginPanel").classList.toggle("hidden", isLoggedIn);
+    $("dashboard").classList.toggle("hidden", !isLoggedIn);
 
-      try {
-        const data = await api("/admin/users");
-        const users = Array.isArray(data) ? data : (data.users || []);
-
-        cachedUsers = users;
-        renderUsers(users);
-      } catch (error) {
-        $("usersTable").innerHTML =
-          `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
-      }
+    if (isLoggedIn && auth.currentUser) {
+      $("adminEmail").textContent = auth.currentUser.email || "Admin";
     }
+  }
 
-    $("refreshUsersBtn").addEventListener("click", async () => {
-      await loadUsers();
-      await loadSummary();
-    });
+  $("loginForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    showMessage("loginMessage", "Signing in...");
 
-    $("coinsForm").addEventListener("submit", async (event) => {
-      event.preventDefault();
-
-      const uid = $("targetUid").value.trim();
-      const amount = Number($("coinAmount").value);
-
-      if (!uid) {
-        showMessage("coinsMessage", "Enter the user's Firebase UID.");
-        return;
-      }
-
-      if (!Number.isInteger(amount) || amount < 1 || amount > 1000000) {
-        showMessage(
-          "coinsMessage",
-          "Enter a whole number from 1 to 1,000,000."
-        );
-        return;
-      }
-
-      const confirmed = confirm(
-        `Add ${amount} coins to user ${uid}?`
+    try {
+      await signInWithEmailAndPassword(
+        auth,
+        $("email").value.trim(),
+        $("password").value
       );
 
-      if (!confirmed) return;
+      showMessage("loginMessage", "");
+    } catch (error) {
+      showMessage("loginMessage", error.message || "Unable to log in.");
+    }
+  });
 
-      showMessage("coinsMessage", "Adding coins...");
+  $("logoutBtn").addEventListener("click", async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      showMessage("globalMessage", error.message);
+    }
+  });
 
-      try {
-        const data = await api(
-          "/admin/users/" + encodeURIComponent(uid) + "/coins",
-          {
-            method: "POST",
-            body: JSON.stringify({ amount })
-          }
-        );
+  onAuthStateChanged(auth, async user => {
+    setLoggedIn(Boolean(user));
 
-        showMessage(
-          "coinsMessage",
-          data.message || "Coins added successfully.",
-          true
-        );
+    if (user) {
+      await Promise.all([
+        loadSummary(),
+        loadUsers(),
+        loadLiveSessions(),
+        loadGifts(),
+        loadDecisionList("recharges"),
+        loadDecisionList("withdrawals")
+      ]);
+    }
+  });
 
-        await loadUsers();
-        await loadSummary();
-      } catch (error) {
-        showMessage("coinsMessage", error.message);
-      }
+  document.querySelectorAll(".tabs button").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".tabs button").forEach(item => {
+        item.classList.remove("active");
+      });
+
+      document.querySelectorAll(".section").forEach(section => {
+        section.classList.remove("active");
+      });
+
+      button.classList.add("active");
+      $(button.dataset.section).classList.add("active");
     });
+  });
 
-    async function loadLiveSessions() {
-      $("liveTable").innerHTML =
-        '<tr><td colspan="3">Loading live sessions...</td></tr>';
+  async function loadSummary() {
+    try {
+      const data = await api("/admin/summary");
+      const summary = data.summary || data;
 
-      try {
-        const data = await api("/admin/live-sessions");
-        const sessions = Array.isArray(data)
-          ? data
-          : (data.sessions || []);
+      $("totalUsers").textContent = formatNumber(summary.totalUsers);
+      $("totalCoins").textContent =
+        summary.totalCoins == null ? "Not available" : formatNumber(summary.totalCoins);
+      $("totalDiamonds").textContent =
+        summary.totalDiamonds == null ? "Not available" : formatNumber(summary.totalDiamonds);
+      $("totalLive").textContent = formatNumber(summary.totalLiveSessions);
 
-        if (!sessions.length) {
-          $("liveTable").innerHTML =
-            '<tr><td colspan="3">No live sessions found.</td></tr>';
-          return;
+      showMessage("globalMessage", "");
+    } catch (error) {
+      showMessage("globalMessage", "Dashboard: " + error.message);
+    }
+  }
+
+  let cachedUsers = [];
+
+  function renderUsers(users) {
+    if (!users.length) {
+      $("usersTable").innerHTML =
+        '<tr><td colspan="4">No matching users found.</td></tr>';
+      return;
+    }
+
+    $("usersTable").innerHTML = users.map(user => {
+      const uid = user.uid || user.id || "";
+
+      return `<tr>
+        <td>${escapeHtml(user.name || user.displayName || user.email || "User")}
+          <br><span class="muted">${escapeHtml(user.email || "")}</span>
+        </td>
+        <td>${escapeHtml(uid)}</td>
+        <td>${formatNumber(user.coins)}</td>
+        <td>${formatNumber(user.diamonds)}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  $("userSearch").addEventListener("input", () => {
+    const query = $("userSearch").value.trim().toLowerCase();
+
+    renderUsers(cachedUsers.filter(user =>
+      [user.name, user.displayName, user.email, user.uid, user.id]
+        .some(value => String(value || "").toLowerCase().includes(query))
+    ));
+  });
+
+  async function loadUsers() {
+    $("usersTable").innerHTML =
+      '<tr><td colspan="4">Loading users...</td></tr>';
+
+    try {
+      const data = await api("/admin/users");
+      const users = Array.isArray(data) ? data : (data.users || []);
+
+      cachedUsers = users;
+      renderUsers(users);
+    } catch (error) {
+      $("usersTable").innerHTML =
+        `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
+    }
+  }
+
+  $("refreshUsersBtn").addEventListener("click", async () => {
+    await loadUsers();
+    await loadSummary();
+  });
+
+  $("coinsForm").addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const uid = $("targetUid").value.trim();
+    const amount = Number($("coinAmount").value);
+
+    if (!uid) {
+      showMessage("coinsMessage", "Enter the user's Firebase UID.");
+      return;
+    }
+
+    if (!Number.isInteger(amount) || amount < 1 || amount > 1000000) {
+      showMessage("coinsMessage", "Enter a whole number from 1 to 1,000,000.");
+      return;
+    }
+
+    if (!confirm(`Add ${amount} coins to user ${uid}?`)) return;
+
+    showMessage("coinsMessage", "Adding coins...");
+
+    try {
+      const data = await api(
+        "/admin/users/" + encodeURIComponent(uid) + "/coins",
+        {
+          method: "POST",
+          body: JSON.stringify({ amount })
         }
+      );
 
-        $("liveTable").innerHTML = sessions.map((session) => `
-          <tr>
-            <td>${escapeHtml(session.hostName || session.name || "Host")}</td>
-            <td>${escapeHtml(session.roomName || session.room || session.id || "")}</td>
-            <td>${escapeHtml(session.status || "Unknown")}</td>
-          </tr>
-        `).join("");
-      } catch (error) {
+      showMessage(
+        "coinsMessage",
+        data.message || "Coins added successfully.",
+        true
+      );
+
+      await loadUsers();
+      await loadSummary();
+    } catch (error) {
+      showMessage("coinsMessage", error.message);
+    }
+  });
+    // ==============================
+  // LIVE SESSIONS
+  // ==============================
+
+  async function loadLiveSessions() {
+    $("liveTable").innerHTML =
+      '<tr><td colspan="3">Loading live sessions...</td></tr>';
+
+    try {
+      const data = await api("/admin/live-sessions");
+      const sessions = Array.isArray(data)
+        ? data
+        : (data.sessions || []);
+
+      if (!sessions.length) {
         $("liveTable").innerHTML =
-          `<tr><td colspan="3">${escapeHtml(error.message)}</td></tr>`;
+          '<tr><td colspan="3">No live sessions found.</td></tr>';
+        return;
       }
+
+      $("liveTable").innerHTML = sessions.map(session => `
+        <tr>
+          <td>${escapeHtml(session.hostName || session.name || session.hostUid || "Host")}</td>
+          <td>${escapeHtml(session.roomName || session.room || session.id || "")}</td>
+          <td>${escapeHtml(session.status || "Live")}</td>
+        </tr>
+      `).join("");
+
+    } catch (error) {
+      $("liveTable").innerHTML =
+        `<tr><td colspan="3">${escapeHtml(error.message)}</td></tr>`;
     }
+  }
 
-    async function loadDecisionList(kind) {
-      const isRecharge = kind === "recharges";
-      const tableId = isRecharge ? "rechargesTable" : "withdrawalsTable";
-      const endpoint = isRecharge ? "/admin/recharges" : "/admin/withdrawals";
-      const collection = isRecharge ? "requests" : "requests";
-      $(tableId).innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
-      try {
-        const data = await api(endpoint);
-        const items = data[collection] || [];
-        if (!items.length) { $(tableId).innerHTML = '<tr><td colspan="4">No requests found.</td></tr>'; return; }
-        $(tableId).innerHTML = items.map(item => {
-          const status = String(item.status || "pending");
-          const amount = isRecharge ? (item.coins ?? item.amount ?? 0) : (item.amount ?? item.coins ?? 0);
-          const actions = status === "pending" ? `<button type="button" data-decision="approve" data-kind="${kind}" data-id="${escapeHtml(item.id)}">Approve</button><button type="button" class="danger" data-decision="reject" data-kind="${kind}" data-id="${escapeHtml(item.id)}">Reject</button>` : "—";
-          return `<tr><td>${escapeHtml(item.uid || item.userUid || "—")}</td><td>${formatNumber(amount)}</td><td>${escapeHtml(status)}</td><td>${actions}</td></tr>`;
-        }).join("");
-      } catch(error) { $(tableId).innerHTML = `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`; }
-    }
+  $("refreshLiveBtn").addEventListener("click", loadLiveSessions);
 
-    document.addEventListener("click", async event => {
-      const button = event.target.closest("button[data-decision]");
-      if (!button) return;
-      const { decision, kind, id } = button.dataset;
-      if (!confirm(`${decision.toUpperCase()} this ${kind} request?`)) return;
-      button.disabled = true;
-      try {
-        const data = await api(`/admin/${kind}/${encodeURIComponent(id)}/decision`, { method: "POST", body: JSON.stringify({ decision }) });
-        showMessage("globalMessage", data.message || "Request updated.", true);
-        await loadDecisionList(kind);
-        await loadSummary();
-      } catch(error) { alert(error.message); button.disabled = false; }
-    });
 
-    $("refreshRechargesBtn").addEventListener("click", () => loadDecisionList("recharges"));
-    $("refreshWithdrawalsBtn").addEventListener("click", () => loadDecisionList("withdrawals"));
+  // ==============================
+  // RECHARGE AND WITHDRAWAL REQUESTS
+  // ==============================
 
-    $("refreshLiveBtn").addEventListener("click", loadLiveSessions);
+  async function loadDecisionList(kind) {
+    const isRecharge = kind === "recharges";
 
-    async function loadGifts() {
-      $("giftsTable").innerHTML =
-        '<tr><td colspan="4">Loading gifts...</td></tr>';
+    const tableId = isRecharge
+      ? "rechargesTable"
+      : "withdrawalsTable";
 
-      try {
-        const data = await api("/admin/gifts");
-        const gifts = Array.isArray(data) ? data : (data.gifts || []);
+    const endpoint = isRecharge
+      ? "/admin/recharges"
+      : "/admin/withdrawals";
 
-        if (!gifts.length) {
-          $("giftsTable").innerHTML =
-            '<tr><td colspan="4">No gift records found.</td></tr>';
-          return;
-        }
+    $(tableId).innerHTML =
+      '<tr><td colspan="4">Loading requests...</td></tr>';
 
-        $("giftsTable").innerHTML = gifts.map((gift) => `
+    try {
+      const data = await api(endpoint);
+      const items = Array.isArray(data)
+        ? data
+        : (data.requests || []);
+
+      if (!items.length) {
+        $(tableId).innerHTML =
+          '<tr><td colspan="4">No requests found.</td></tr>';
+        return;
+      }
+
+      $(tableId).innerHTML = items.map(item => {
+        const status = String(item.status || "pending");
+
+        const amount = isRecharge
+          ? (item.coins ?? item.amount ?? 0)
+          : (item.amount ?? item.coins ?? 0);
+
+        const uid = item.uid || item.userUid || item.userId || "—";
+
+        const actions = status.toLowerCase() === "pending"
+          ? `
+            <button type="button"
+              data-decision="approve"
+              data-kind="${kind}"
+              data-id="${escapeHtml(item.id)}">
+              Approve
+            </button>
+
+            <button type="button"
+              class="danger"
+              data-decision="reject"
+              data-kind="${kind}"
+              data-id="${escapeHtml(item.id)}">
+              Reject
+            </button>
+          `
+          : "—";
+
+        return `
           <tr>
-            <td>${escapeHtml(gift.giftName || gift.name || gift.gift || "Gift")}</td>
-            <td>${escapeHtml(gift.senderName || gift.senderUid || gift.senderId || "—")}</td>
-            <td>${escapeHtml(gift.receiverName || gift.hostUid || gift.receiverUid || "—")}</td>
-            <td>${formatNumber(gift.price ?? gift.coins ?? gift.amount)}</td>
+            <td>${escapeHtml(uid)}</td>
+            <td>${formatNumber(amount)}</td>
+            <td>${escapeHtml(status)}</td>
+            <td>${actions}</td>
           </tr>
-        `).join("");
-      } catch (error) {
-        $("giftsTable").innerHTML =
-          `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
-      }
+        `;
+      }).join("");
+
+    } catch (error) {
+      $(tableId).innerHTML =
+        `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
+    }
+  }
+
+
+  // Approve / Reject buttons
+
+  document.addEventListener("click", async event => {
+    const button = event.target.closest("button[data-decision]");
+
+    if (!button) return;
+
+    const { decision, kind, id } = button.dataset;
+
+    if (!id) {
+      alert("Request ID is missing.");
+      return;
     }
 
-    $("refreshGiftsBtn").addEventListener("click", loadGifts);
-  </script>
+    const confirmed = confirm(
+      `${decision.toUpperCase()} this ${kind} request?`
+    );
+
+    if (!confirmed) return;
+
+    button.disabled = true;
+
+    try {
+      const data = await api(
+        `/admin/${kind}/${encodeURIComponent(id)}/decision`,
+        {
+          method: "POST",
+          body: JSON.stringify({ decision })
+        }
+      );
+
+      showMessage(
+        "globalMessage",
+        data.message || "Request updated successfully.",
+        true
+      );
+
+      await loadDecisionList(kind);
+      await loadSummary();
+      await loadUsers();
+
+    } catch (error) {
+      alert(error.message);
+      button.disabled = false;
+    }
+  });
+
+
+  $("refreshRechargesBtn").addEventListener("click", () => {
+    loadDecisionList("recharges");
+  });
+
+  $("refreshWithdrawalsBtn").addEventListener("click", () => {
+    loadDecisionList("withdrawals");
+  });
+
+
+  // ==============================
+  // GIFT HISTORY
+  // ==============================
+
+  async function loadGifts() {
+    $("giftsTable").innerHTML =
+      '<tr><td colspan="4">Loading gift history...</td></tr>';
+
+    try {
+      const data = await api("/admin/gifts");
+
+      const gifts = Array.isArray(data)
+        ? data
+        : (data.gifts || []);
+
+      if (!gifts.length) {
+        $("giftsTable").innerHTML =
+          '<tr><td colspan="4">No gift records found.</td></tr>';
+        return;
+      }
+
+      $("giftsTable").innerHTML = gifts.map(gift => {
+        const giftName =
+          gift.giftName ||
+          gift.name ||
+          gift.gift ||
+          gift.giftId ||
+          "Gift";
+
+        const sender =
+          gift.senderName ||
+          gift.senderUid ||
+          gift.senderId ||
+          "—";
+
+        const receiver =
+          gift.receiverName ||
+          gift.hostUid ||
+          gift.receiverUid ||
+          "—";
+
+        const price =
+          gift.price ??
+          gift.coins ??
+          gift.amount ??
+          0;
+
+        return `
+          <tr>
+            <td>${escapeHtml(giftName)}</td>
+            <td>${escapeHtml(sender)}</td>
+            <td>${escapeHtml(receiver)}</td>
+            <td>${formatNumber(price)}</td>
+          </tr>
+        `;
+      }).join("");
+
+    } catch (error) {
+      $("giftsTable").innerHTML =
+        `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
+    }
+  }
+
+  $("refreshGiftsBtn").addEventListener("click", loadGifts);
+
+
+  // ==============================
+  // END OF ADMIN PANEL SCRIPT
+  // ==============================
+
+</script>
 </body>
 </html>
