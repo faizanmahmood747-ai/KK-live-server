@@ -3,7 +3,11 @@ import { AccessToken } from "livekit-server-sdk";
 import admin from "firebase-admin";
 
 const app = express();
-
+app.use((req, res, next) => {
+    res.setHeader("X-KK-Server", "KK-LIVE-RECHARGE-CHECK-1");
+    console.log("KK LIVE REQUEST:", req.method, req.originalUrl);
+    next();
+});
 app.use(express.json({ limit: "8mb" }));
 
 // =====================================
