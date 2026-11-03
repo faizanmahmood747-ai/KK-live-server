@@ -21,7 +21,7 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 const ADMIN_UID = process.env.ADMIN_UID;
 
 const IMAGEKIT_PUBLIC_KEY = process.env.IMAGEKIT_PUBLIC_KEY;
-const IMAGEKIT_PRIVATE_KEY = process.env.IMAGEKIT_PRIVATE_KEY;
+const IMAGEKIT_PRIVATE_KEY = process.env.IMAGEKIT_PRIVATE_KEY?.trim();
 const IMAGEKIT_URL_ENDPOINT = process.env.IMAGEKIT_URL_ENDPOINT;
 
 // =====================================
