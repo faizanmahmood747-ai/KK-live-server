@@ -2052,7 +2052,61 @@ app.get(
     }
 );
 
+// =====================================// =====================================
+// IMAGEKIT AUTHENTICATION CHECK
 // =====================================
+
+app.get("/imagekit-check", async (req, res) => {
+    try {
+        const privateKey = process.env.IMAGEKIT_PRIVATE_KEY?.trim();
+
+        if (!privateKey) {
+            return res.status(500).json({
+                success: false,
+                message: "ImageKit private key is missing."
+            });
+        }
+
+        const credentials = Buffer
+            .from(`${privateKey}:`)
+            .toString("base64");
+
+        const response = await fetch(
+            "https://api.imagekit.io/v1/files?limit=1",
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Basic ${credentials}`
+                }
+            }
+        );
+
+        const responseText = await response.text();
+
+        let providerData = {};
+        try {
+            providerData = JSON.parse(responseText);
+        } catch {
+            providerData = {};
+        }
+
+        return res.status(200).json({
+            success: response.ok,
+            imagekitStatus: response.status,
+            message: response.ok
+                ? "ImageKit authentication successful."
+                : providerData.message || providerData.help || "ImageKit authentication failed."
+        });
+
+    } catch (error) {
+        console.error("ImageKit check error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to connect to ImageKit."
+        });
+    }
+});
 // UNKNOWN ROUTE
 // =====================================
 
